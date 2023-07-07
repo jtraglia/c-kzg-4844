@@ -202,8 +202,9 @@ impl Blob {
                 bytes.len(),
             )));
         }
-        let mut new_bytes = [0; BYTES_PER_BLOB];
-        new_bytes.copy_from_slice(bytes);
+        let mut new_bytes_boxed = vec![0; BYTES_PER_BLOB].into_boxed_slice();
+        new_bytes_boxed.copy_from_slice(bytes);
+        let new_bytes = unsafe { std::ptr::read(new_bytes_boxed.as_ptr() as *const _) };
         Ok(Self { bytes: new_bytes })
     }
 
