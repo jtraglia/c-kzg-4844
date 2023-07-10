@@ -300,7 +300,7 @@ impl KZGProof {
     }
 
     pub fn compute_blob_kzg_proof(
-        blob: Box<Blob>,
+        blob: Blob,
         commitment_bytes: Bytes48,
         kzg_settings: &KZGSettings,
     ) -> Result<Self, Error> {
@@ -308,7 +308,7 @@ impl KZGProof {
         unsafe {
             let res = compute_blob_kzg_proof(
                 kzg_proof.as_mut_ptr(),
-                &*blob,
+                &blob,
                 &commitment_bytes,
                 kzg_settings,
             );
