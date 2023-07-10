@@ -202,9 +202,9 @@ impl Blob {
                 bytes.len(),
             )));
         }
-        let mut new_bytes = [0; BYTES_PER_BLOB];
-        new_bytes.copy_from_slice(bytes);
-        Ok(Box::new(Self { bytes: new_bytes }))
+        let mut blob = Box::new(Self { bytes: [0; BYTES_PER_BLOB] });
+        blob.bytes.copy_from_slice(bytes);
+        Ok(blob)
     }
 
     pub fn from_hex(hex_str: &str) -> Result<Box<Self>, Error> {
