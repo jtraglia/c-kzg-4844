@@ -430,14 +430,14 @@ impl KZGCommitment {
     }
 
     pub fn blob_to_kzg_commitment(
-        blob: Box<Blob>,
+        blob: Blob,
         kzg_settings: &KZGSettings,
     ) -> Result<Self, Error> {
         let mut kzg_commitment: MaybeUninit<KZGCommitment> = MaybeUninit::uninit();
         unsafe {
             let res = blob_to_kzg_commitment(
                 kzg_commitment.as_mut_ptr(),
-                (*blob).bytes.as_ptr() as *const Blob,
+                blob.as_ptr() as *const Blob,
                 kzg_settings,
             );
             if let C_KZG_RET::C_KZG_OK = res {
