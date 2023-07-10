@@ -346,18 +346,18 @@ impl KZGProof {
     }
 
     pub fn verify_blob_kzg_proof(
-        blob: Blob,
-        commitment_bytes: Bytes48,
-        proof_bytes: Bytes48,
+        blob: &Blob,
+        commitment_bytes: &Bytes48,
+        proof_bytes: &Bytes48,
         kzg_settings: &KZGSettings,
     ) -> Result<bool, Error> {
         let mut verified: MaybeUninit<bool> = MaybeUninit::uninit();
         unsafe {
             let res = verify_blob_kzg_proof(
                 verified.as_mut_ptr(),
-                &blob,
-                &commitment_bytes,
-                &proof_bytes,
+                blob,
+                commitment_bytes,
+                proof_bytes,
                 kzg_settings,
             );
             if let C_KZG_RET::C_KZG_OK = res {
