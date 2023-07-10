@@ -346,7 +346,7 @@ impl KZGProof {
     }
 
     pub fn verify_blob_kzg_proof(
-        blob: Box<Blob>,
+        blob: &Blob,
         commitment_bytes: &Bytes48,
         proof_bytes: &Bytes48,
         kzg_settings: &KZGSettings,
@@ -369,7 +369,7 @@ impl KZGProof {
     }
 
     pub fn verify_blob_kzg_proof_batch(
-        blobs: Box<&[Blob]>,
+        blobs: &[Blob],
         commitments_bytes: &[Bytes48],
         proofs_bytes: &[Bytes48],
         kzg_settings: &KZGSettings,
@@ -389,14 +389,13 @@ impl KZGProof {
             )));
         }
         let mut verified: MaybeUninit<bool> = MaybeUninit::uninit();
-        let blob_slice = &**blobs;
         unsafe {
             let res = verify_blob_kzg_proof_batch(
                 verified.as_mut_ptr(),
-                blob_slice.as_ptr(),
+                blobs.as_ptr(),
                 commitments_bytes.as_ptr(),
                 proofs_bytes.as_ptr(),
-                blob_slice.len(),
+                blobs.len(),
                 kzg_settings,
             );
             if let C_KZG_RET::C_KZG_OK = res {
