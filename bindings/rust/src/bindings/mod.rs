@@ -277,7 +277,7 @@ impl KZGProof {
     }
 
     pub fn compute_kzg_proof(
-        blob: Box<Blob>,
+        blob: Blob,
         z_bytes: Bytes32,
         kzg_settings: &KZGSettings,
     ) -> Result<(Self, Bytes32), Error> {
@@ -287,7 +287,7 @@ impl KZGProof {
             let res = compute_kzg_proof(
                 kzg_proof.as_mut_ptr(),
                 y_out.as_mut_ptr(),
-                &*blob,
+                &blob,
                 &z_bytes,
                 kzg_settings,
             );
