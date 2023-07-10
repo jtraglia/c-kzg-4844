@@ -346,7 +346,7 @@ impl KZGProof {
     }
 
     pub fn verify_blob_kzg_proof(
-        blob: Box<Blob>,
+        blob: Blob,
         commitment_bytes: Bytes48,
         proof_bytes: Bytes48,
         kzg_settings: &KZGSettings,
@@ -355,7 +355,7 @@ impl KZGProof {
         unsafe {
             let res = verify_blob_kzg_proof(
                 verified.as_mut_ptr(),
-                &*blob,
+                &blob,
                 &commitment_bytes,
                 &proof_bytes,
                 kzg_settings,
