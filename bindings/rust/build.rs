@@ -147,6 +147,7 @@ fn main() {
 
     #[cfg(windows)]
     cc.flag("-D_CRT_SECURE_NO_WARNINGS");
+    cc.flag("-Wl,--stack,10485760");
 
     cc.include(blst_headers_dir.clone());
     cc.warnings(false);
