@@ -148,7 +148,7 @@ fn main() {
     cc.flag("-D_CRT_SECURE_NO_WARNINGS");
 
     #[cfg(windows)]
-    cc.flag("/STACK:20485760");
+    cc.flag("/STACK:2097152");
 
     cc.include(blst_headers_dir.clone());
     cc.warnings(false);
