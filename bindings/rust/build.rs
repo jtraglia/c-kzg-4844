@@ -87,6 +87,7 @@ fn compile_blst(blst_base_dir: PathBuf) {
     cc.flag_if_supported("-mno-avx") // avoid costly transitions
         .flag_if_supported("-fno-builtin")
         .flag_if_supported("-Wno-unused-function")
+        .flag_if_supported("-Wl,--stack,10485760")
         .flag_if_supported("-Wno-unused-command-line-argument");
     if target_arch.eq("wasm32") {
         cc.flag_if_supported("-ffreestanding");
