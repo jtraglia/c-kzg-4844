@@ -87,7 +87,6 @@ fn compile_blst(blst_base_dir: PathBuf) {
     cc.flag_if_supported("-mno-avx") // avoid costly transitions
         .flag_if_supported("-fno-builtin")
         .flag_if_supported("-Wno-unused-function")
-        .flag_if_supported("-Wl,--stack,10485760")
         .flag_if_supported("-Wno-unused-command-line-argument");
     if target_arch.eq("wasm32") {
         cc.flag_if_supported("-ffreestanding");
@@ -149,7 +148,7 @@ fn main() {
     cc.flag("-D_CRT_SECURE_NO_WARNINGS");
 
     #[cfg(windows)]
-    cc.flag("/STACK:10485760");
+    cc.flag("/STACK:20485760");
 
     cc.include(blst_headers_dir.clone());
     cc.warnings(false);
