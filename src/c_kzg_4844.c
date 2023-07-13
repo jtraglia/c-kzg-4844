@@ -25,6 +25,7 @@
 #include <inttypes.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 ///////////////////////////////////////////////////////////////////////////////
 // Macros
@@ -1202,13 +1203,19 @@ C_KZG_RET VERIFY_BLOB_KZG_PROOF(
     fr_t evaluation_challenge_fr, y_fr;
     g1_t commitment_g1, proof_g1;
 
+    printf("a: %p\n", ok);
+    printf("b: %p\n", blob);
+    printf("c: %p\n", commitment_bytes);
+    printf("d: %p\n", proof_bytes);
+    printf("e: %p\n", s);
+
     *ok = false;
-    /* XXX: crash if ret here */
+    /* XXX: no crash if ret here */
 
     /* Do conversions first to fail fast, compute_challenge is expensive */
     ret = bytes_to_kzg_commitment(&commitment_g1, commitment_bytes);
     if (ret != C_KZG_OK) return ret;
-    return true;
+    return C_KZG_OK;
     ret = c_kzg_calloc((void**)&polynomial, FIELD_ELEMENTS_PER_BLOB, sizeof(fr_t));
     if (ret != C_KZG_OK) return ret;
     /* XXX: crash if ret here */
