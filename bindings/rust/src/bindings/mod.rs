@@ -360,7 +360,6 @@ impl KZGProof {
                 proof_bytes,
                 kzg_settings,
             );
-            println!("after\n");
             if let C_KZG_RET::C_KZG_OK = res {
                 Ok(verified)
             } else {
