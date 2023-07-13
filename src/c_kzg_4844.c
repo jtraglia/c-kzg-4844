@@ -1203,12 +1203,14 @@ C_KZG_RET VERIFY_BLOB_KZG_PROOF(
     g1_t commitment_g1, proof_g1;
 
     *ok = false;
+    /* XXX: crash if ret here */
 
     /* Do conversions first to fail fast, compute_challenge is expensive */
     ret = bytes_to_kzg_commitment(&commitment_g1, commitment_bytes);
     if (ret != C_KZG_OK) return ret;
     ret = c_kzg_calloc((void**)&polynomial, FIELD_ELEMENTS_PER_BLOB, sizeof(fr_t));
     if (ret != C_KZG_OK) return ret;
+    return true;
     ret = blob_to_polynomial(polynomial, blob);
     if (ret != C_KZG_OK) return ret;
     ret = bytes_to_kzg_proof(&proof_g1, proof_bytes);
@@ -1216,7 +1218,7 @@ C_KZG_RET VERIFY_BLOB_KZG_PROOF(
 
     /* Compute challenge for the blob/commitment */
     compute_challenge(&evaluation_challenge_fr, blob, &commitment_g1);
-    return true;
+    /* XXX: crash if ret here */
 
     /* Evaluate challenge to get y */
     ret = evaluate_polynomial_in_evaluation_form(
