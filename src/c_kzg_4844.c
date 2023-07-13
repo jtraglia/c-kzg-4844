@@ -1203,6 +1203,7 @@ C_KZG_RET VERIFY_BLOB_KZG_PROOF(
     fr_t evaluation_challenge_fr, y_fr;
     g1_t commitment_g1, proof_g1;
 
+    /*
     printf("a: %p\n", ok);
     printf("b: %p\n", blob);
     printf("c: %p\n", commitment_bytes);
@@ -1210,20 +1211,15 @@ C_KZG_RET VERIFY_BLOB_KZG_PROOF(
     printf("e: %p\n", s);
     printf("ok = %d\n", *ok);
     printf("done\n");
+    */
 
-    /* XXX: no crash if ret here */
-    printf("0\n");
     *ok = 0;
-    printf("1\n");
 
     /* Do conversions first to fail fast, compute_challenge is expensive */
     ret = bytes_to_kzg_commitment(&commitment_g1, commitment_bytes);
     if (ret != C_KZG_OK) return ret;
-    printf("2\n");
     ret = c_kzg_calloc((void**)&polynomial, FIELD_ELEMENTS_PER_BLOB, sizeof(fr_t));
     if (ret != C_KZG_OK) return ret;
-    printf("3\n");
-    /* XXX: crash if ret here */
     ret = blob_to_polynomial(polynomial, blob);
     if (ret != C_KZG_OK) return ret;
     ret = bytes_to_kzg_proof(&proof_g1, proof_bytes);
@@ -1231,7 +1227,6 @@ C_KZG_RET VERIFY_BLOB_KZG_PROOF(
 
     /* Compute challenge for the blob/commitment */
     compute_challenge(&evaluation_challenge_fr, blob, &commitment_g1);
-    /* XXX: crash if ret here */
 
     /* Evaluate challenge to get y */
     ret = evaluate_polynomial_in_evaluation_form(
