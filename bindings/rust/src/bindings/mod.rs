@@ -354,12 +354,13 @@ impl KZGProof {
         let mut verified: bool = false;
         unsafe {
             let res = verify_blob_kzg_proof(
-                &mut verified as *mut bool,
+                &mut verified,
                 blob,
                 commitment_bytes,
                 proof_bytes,
                 kzg_settings,
             );
+            println!("after\n");
             if let C_KZG_RET::C_KZG_OK = res {
                 Ok(verified)
             } else {
