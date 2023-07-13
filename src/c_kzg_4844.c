@@ -1202,8 +1202,6 @@ C_KZG_RET VERIFY_BLOB_KZG_PROOF(
     fr_t evaluation_challenge_fr, y_fr;
     g1_t commitment_g1, proof_g1;
 
-    return true;
-
     *ok = false;
 
     /* Do conversions first to fail fast, compute_challenge is expensive */
@@ -1218,6 +1216,7 @@ C_KZG_RET VERIFY_BLOB_KZG_PROOF(
 
     /* Compute challenge for the blob/commitment */
     compute_challenge(&evaluation_challenge_fr, blob, &commitment_g1);
+    return true;
 
     /* Evaluate challenge to get y */
     ret = evaluate_polynomial_in_evaluation_form(
