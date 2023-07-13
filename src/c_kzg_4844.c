@@ -1208,16 +1208,21 @@ C_KZG_RET VERIFY_BLOB_KZG_PROOF(
     printf("c: %p\n", commitment_bytes);
     printf("d: %p\n", proof_bytes);
     printf("e: %p\n", s);
+    printf("ok = %d\n", *ok);
+    printf("done\n");
 
-    *ok = false;
     /* XXX: no crash if ret here */
+    printf("0\n");
+    *ok = 0;
+    printf("1\n");
 
     /* Do conversions first to fail fast, compute_challenge is expensive */
     ret = bytes_to_kzg_commitment(&commitment_g1, commitment_bytes);
     if (ret != C_KZG_OK) return ret;
-    return C_KZG_OK;
+    printf("2\n");
     ret = c_kzg_calloc((void**)&polynomial, FIELD_ELEMENTS_PER_BLOB, sizeof(fr_t));
     if (ret != C_KZG_OK) return ret;
+    printf("3\n");
     /* XXX: crash if ret here */
     ret = blob_to_polynomial(polynomial, blob);
     if (ret != C_KZG_OK) return ret;
