@@ -71,8 +71,8 @@ template checkBytes48(res: untyped) =
 suite "yaml tests":
   var ctx: KzgCtx
 
-  test "load trusted setup from string":
-    let res = loadTrustedSetupFromString(trustedSetup)
+  test "load trusted setup":
+    let res = loadTrustedSetup(trustedSetupFile)
     check res.isOk
     ctx = res.get
 

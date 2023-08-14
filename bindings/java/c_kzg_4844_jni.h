@@ -31,14 +31,6 @@ JNIEXPORT void JNICALL Java_ethereum_ckzg4844_CKZG4844JNI_loadTrustedSetup__Ljav
 
 /*
  * Class:     ethereum_ckzg4844_CKZG4844JNI
- * Method:    loadTrustedSetup
- * Signature: ([BJ[BJ)V
- */
-JNIEXPORT void JNICALL Java_ethereum_ckzg4844_CKZG4844JNI_loadTrustedSetup___3BJ_3BJ
-  (JNIEnv *, jclass, jbyteArray, jlong, jbyteArray, jlong);
-
-/*
- * Class:     ethereum_ckzg4844_CKZG4844JNI
  * Method:    freeTrustedSetup
  * Signature: ()V
  */

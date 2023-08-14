@@ -38,10 +38,9 @@ This library also provides functions for loading and freeing the trusted setup,
 which are not defined in the specification. These functions are intended to be
 executed once during the initialization process. As the name suggests, the
 [trusted setup
-file](https://github.com/ethereum/c-kzg-4844/blob/main/src/trusted_setup.txt) is
+file](https://github.com/ethereum/c-kzg-4844/blob/main/src/mainnet.tsif) is
 considered to be trustworthy.
 
-- `load_trusted_setup`
 - `load_trusted_setup_file`
 - `free_trusted_setup`
 

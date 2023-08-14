@@ -23,7 +23,7 @@
     </ItemGroup>
 
     <ItemGroup>
-        <Content Include="..\..\..\src\trusted_setup.txt" Link="trusted_setup.txt">
+        <Content Include="..\..\..\src\mainnet.tsif" Link="mainnet.tsif">
             <CopyToOutputDirectory>Always</CopyToOutputDirectory>
         </Content>
     </ItemGroup>

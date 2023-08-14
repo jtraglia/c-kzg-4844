@@ -121,40 +121,6 @@ func (b *Blob) UnmarshalText(input []byte) error {
 ///////////////////////////////////////////////////////////////////////////////
 
 /*
-LoadTrustedSetup is the binding for:
-
-	C_KZG_RET load_trusted_setup(
-	    KZGSettings *out,
-	    const uint8_t *g1_bytes,
-	    size_t n1,
-	    const uint8_t *g2_bytes,
-	    size_t n2);
-*/
-func LoadTrustedSetup(g1Bytes, g2Bytes []byte) error {
-	if loaded {
-		panic("trusted setup is already loaded")
-	}
-	if len(g1Bytes)%C.BYTES_PER_G1 != 0 {
-		panic(fmt.Sprintf("len(g1Bytes) is not a multiple of %v", C.BYTES_PER_G1))
-	}
-	if len(g2Bytes)%C.BYTES_PER_G2 != 0 {
-		panic(fmt.Sprintf("len(g2Bytes) is not a multiple of %v", C.BYTES_PER_G2))
-	}
-	numG1Elements := len(g1Bytes) / C.BYTES_PER_G1
-	numG2Elements := len(g2Bytes) / C.BYTES_PER_G2
-	ret := C.load_trusted_setup(
-		&settings,
-		*(**C.uint8_t)(unsafe.Pointer(&g1Bytes)),
-		(C.size_t)(numG1Elements),
-		*(**C.uint8_t)(unsafe.Pointer(&g2Bytes)),
-		(C.size_t)(numG2Elements))
-	if ret == C.C_KZG_OK {
-		loaded = true
-	}
-	return makeErrorFromRet(ret)
-}
-
-/*
 LoadTrustedSetupFile is the binding for:
 
 	C_KZG_RET load_trusted_setup_file(

@@ -607,9 +607,9 @@ mod tests {
     #[test]
     fn test_end_to_end() {
         let trusted_setup_file = if cfg!(feature = "minimal-spec") {
-            PathBuf::from("../../src/trusted_setup_4.txt")
+            PathBuf::from("../../src/minimal.tsif")
         } else {
-            PathBuf::from("../../src/trusted_setup.txt")
+            PathBuf::from("../../src/mainnet.tsif")
         };
         test_simple(trusted_setup_file);
     }
@@ -624,7 +624,7 @@ mod tests {
     #[cfg(not(feature = "minimal-spec"))]
     #[test]
     fn test_blob_to_kzg_commitment() {
-        let trusted_setup_file = PathBuf::from("../../src/trusted_setup.txt");
+        let trusted_setup_file = PathBuf::from("../../src/mainnet.tsif");
         assert!(trusted_setup_file.exists());
         let kzg_settings = KZGSettings::load_trusted_setup_file(trusted_setup_file).unwrap();
         let test_files: Vec<PathBuf> = glob::glob(BLOB_TO_KZG_COMMITMENT_TESTS)
@@ -651,7 +651,7 @@ mod tests {
     #[cfg(not(feature = "minimal-spec"))]
     #[test]
     fn test_compute_kzg_proof() {
-        let trusted_setup_file = PathBuf::from("../../src/trusted_setup.txt");
+        let trusted_setup_file = PathBuf::from("../../src/mainnet.tsif");
         assert!(trusted_setup_file.exists());
         let kzg_settings = KZGSettings::load_trusted_setup_file(trusted_setup_file).unwrap();
         let test_files: Vec<PathBuf> = glob::glob(COMPUTE_KZG_PROOF_TESTS)
@@ -681,7 +681,7 @@ mod tests {
     #[cfg(not(feature = "minimal-spec"))]
     #[test]
     fn test_compute_blob_kzg_proof() {
-        let trusted_setup_file = PathBuf::from("../../src/trusted_setup.txt");
+        let trusted_setup_file = PathBuf::from("../../src/mainnet.tsif");
         assert!(trusted_setup_file.exists());
         let kzg_settings = KZGSettings::load_trusted_setup_file(trusted_setup_file).unwrap();
         let test_files: Vec<PathBuf> = glob::glob(COMPUTE_BLOB_KZG_PROOF_TESTS)
@@ -711,7 +711,7 @@ mod tests {
     #[cfg(not(feature = "minimal-spec"))]
     #[test]
     fn test_verify_kzg_proof() {
-        let trusted_setup_file = PathBuf::from("../../src/trusted_setup.txt");
+        let trusted_setup_file = PathBuf::from("../../src/mainnet.tsif");
         assert!(trusted_setup_file.exists());
         let kzg_settings = KZGSettings::load_trusted_setup_file(trusted_setup_file).unwrap();
         let test_files: Vec<PathBuf> = glob::glob(VERIFY_KZG_PROOF_TESTS)
@@ -743,7 +743,7 @@ mod tests {
     #[cfg(not(feature = "minimal-spec"))]
     #[test]
     fn test_verify_blob_kzg_proof() {
-        let trusted_setup_file = PathBuf::from("../../src/trusted_setup.txt");
+        let trusted_setup_file = PathBuf::from("../../src/mainnet.tsif");
         assert!(trusted_setup_file.exists());
         let kzg_settings = KZGSettings::load_trusted_setup_file(trusted_setup_file).unwrap();
         let test_files: Vec<PathBuf> = glob::glob(VERIFY_BLOB_KZG_PROOF_TESTS)
@@ -774,7 +774,7 @@ mod tests {
     #[cfg(not(feature = "minimal-spec"))]
     #[test]
     fn test_verify_blob_kzg_proof_batch() {
-        let trusted_setup_file = PathBuf::from("../../src/trusted_setup.txt");
+        let trusted_setup_file = PathBuf::from("../../src/mainnet.tsif");
         assert!(trusted_setup_file.exists());
         let kzg_settings = KZGSettings::load_trusted_setup_file(trusted_setup_file).unwrap();
         let test_files: Vec<PathBuf> = glob::glob(VERIFY_BLOB_KZG_PROOF_BATCH_TESTS)

@@ -24,7 +24,7 @@ suite "verify proof (high-level)":
   var ctx: KzgCtx
 
   test "load trusted setup from string":
-    let res = loadTrustedSetupFromString(trustedSetup)
+    let res = loadTrustedSetup(trustedSetupFile)
     check res.isOk
     ctx = res.get
 

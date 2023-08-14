@@ -22,32 +22,20 @@ import org.junit.jupiter.params.provider.MethodSource;
 public class CKZG4844JNITest {
   private enum TrustedSetupSource {
     FILE,
-    PARAMETERS,
     RESOURCE
   }
 
   private static final Preset PRESET;
 
   private static final Map<Preset, String> TRUSTED_SETUP_FILE_BY_PRESET =
-      Map.of(
-          Preset.MAINNET,
-          "../../src/trusted_setup.txt",
-          Preset.MINIMAL,
-          "../../src/trusted_setup_4.txt");
+      Map.of(Preset.MAINNET, "../../src/mainnet.tsif", Preset.MINIMAL, "../../src/minimal.tsif");
 
   private static final Map<Preset, String> TRUSTED_SETUP_RESOURCE_BY_PRESET =
       Map.of(
           Preset.MAINNET,
-          "/trusted-setups/trusted_setup.txt",
+          "/trusted-setups/mainnet.tsif",
           Preset.MINIMAL,
-          "/trusted-setups/trusted_setup_4.txt");
-
-  private static final Map<Preset, String> OLD_TRUSTED_SETUP_FILE_BY_PRESET =
-      Map.of(
-          Preset.MAINNET,
-          "./src/testFixtures/resources/trusted-setups/trusted_setup_old.txt",
-          Preset.MINIMAL,
-          "./src/testFixtures/resources/trusted-setups/trusted_setup_4_old.txt");
+          "/trusted-setups/minimal.tsif");
 
   static {
     PRESET =
@@ -343,48 +331,6 @@ public class CKZG4844JNITest {
   }
 
   @Test
-  public void shouldThrowExceptionIfTrustedSetupIsNotInLagrangeForm() {
-    CKZGException exception =
-        assertThrows(
-            CKZGException.class,
-            () -> CKZG4844JNI.loadTrustedSetup(OLD_TRUSTED_SETUP_FILE_BY_PRESET.get(PRESET)));
-
-    assertEquals(C_KZG_BADARGS, exception.getError());
-  }
-
-  @Test
-  public void shouldThrowExceptionOnIncorrectTrustedSetupParameters() {
-    final LoadTrustedSetupParameters parameters =
-        TestUtils.createLoadTrustedSetupParameters(TRUSTED_SETUP_FILE_BY_PRESET.get(PRESET));
-
-    // wrong g1Count
-    CKZGException exception =
-        assertThrows(
-            CKZGException.class,
-            () ->
-                CKZG4844JNI.loadTrustedSetup(
-                    parameters.getG1(),
-                    parameters.getG1Count() + 1,
-                    parameters.getG2(),
-                    parameters.getG2Count()));
-    assertEquals(C_KZG_BADARGS, exception.getError());
-    assertTrue(exception.getErrorMessage().contains("Invalid g1 size."));
-
-    // wrong g2Count
-    exception =
-        assertThrows(
-            CKZGException.class,
-            () ->
-                CKZG4844JNI.loadTrustedSetup(
-                    parameters.getG1(),
-                    parameters.getG1Count(),
-                    parameters.getG2(),
-                    parameters.getG2Count() + 1));
-    assertEquals(C_KZG_BADARGS, exception.getError());
-    assertTrue(exception.getErrorMessage().contains("Invalid g2 size."));
-  }
-
-  @Test
   public void shouldThrowExceptionOnIncorrectTrustedSetupFromFile() {
     final Preset incorrectPreset = PRESET == Preset.MAINNET ? Preset.MINIMAL : Preset.MAINNET;
     final CKZGException exception =
@@ -403,9 +349,6 @@ public class CKZG4844JNITest {
       case FILE:
         loadTrustedSetup();
         break;
-      case PARAMETERS:
-        loadTrustedSetupFromParameters();
-        break;
       case RESOURCE:
         loadTrustedSetupFromResource();
         break;
@@ -414,13 +357,6 @@ public class CKZG4844JNITest {
 
   private static void loadTrustedSetup() {
     CKZG4844JNI.loadTrustedSetup(TRUSTED_SETUP_FILE_BY_PRESET.get(PRESET));
-  }
-
-  private static void loadTrustedSetupFromParameters() {
-    final LoadTrustedSetupParameters parameters =
-        TestUtils.createLoadTrustedSetupParameters(TRUSTED_SETUP_FILE_BY_PRESET.get(PRESET));
-    CKZG4844JNI.loadTrustedSetup(
-        parameters.getG1(), parameters.getG1Count(), parameters.getG2(), parameters.getG2Count());
   }
 
   public static void loadTrustedSetupFromResource() {

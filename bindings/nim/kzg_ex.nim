@@ -58,17 +58,6 @@ proc loadTrustedSetup*(_: type Kzg,
   setupCtx:
     kzg.loadTrustedSetup(fileName)
 
-proc loadTrustedSetup*(_: type Kzg, g1: openArray[G1Data],
-                       g2: openArray[G2Data]):
-                           Result[void, string] =
-  setupCtx:
-    kzg.loadTrustedSetup(g1, g2)
-
-proc loadTrustedSetupFromString*(_: type Kzg,
-                                 input: string): Result[void, string] =
-  setupCtx:
-    kzg.loadTrustedSetupFromString(input)
-
 proc freeTrustedSetup*(_: type Kzg): Result[void, string] =
   verifyCtx:
     gCtx.freeTrustedSetup()

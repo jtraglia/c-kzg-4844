@@ -68,58 +68,6 @@ proc loadTrustedSetup*(fileName: string): Result[KzgCtx, string] =
   except IOError as ex:
     return err(ex.msg)
 
-proc loadTrustedSetup*(g1: openArray[G1Data],
-                       g2: openArray[G2Data]):
-                         Result[KzgCtx, string] =
-  if g1.len == 0 or g2.len == 0:
-    return err($KZG_BADARGS)
-
-  let
-    ctx = newKzgCtx()
-    res = load_trusted_setup(ctx.val,
-      g1[0][0].getPtr,
-      g1.len.csize_t,
-      g2[0][0].getPtr,
-      g2.len.csize_t)
-  verify(res, ctx)
-
-proc loadTrustedSetupFromString*(input: string): Result[KzgCtx, string] =
-  const
-    NumG2 = 65
-    G1Len = G1Data.len
-    G2Len = G2Data.len
-
-  var
-    s = newStringStream(input)
-    g1: array[FIELD_ELEMENTS_PER_BLOB, G1Data]
-    g2: array[NumG2, G2Data]
-
-  try:
-    let fieldElems = s.readLine().parseInt()
-    if fieldElems != FIELD_ELEMENTS_PER_BLOB:
-      return err("invalid field elemments per blob, expect $1, got $2" % [
-        $FIELD_ELEMENTS_PER_BLOB, $fieldElems
-      ])
-    let numG2 = s.readLine().parseInt()
-    if numG2 != NumG2:
-      return err("invalid number of G2, expect $1, got $2" % [
-        $NumG2, $numG2
-      ])
-
-    for i in 0 ..< FIELD_ELEMENTS_PER_BLOB:
-      g1[i] = hexToByteArray[G1Len](s.readLine())
-
-    for i in 0 ..< NumG2:
-      g2[i] = hexToByteArray[G2Len](s.readLine())
-  except ValueError as ex:
-    return err(ex.msg)
-  except OSError as ex:
-    return err(ex.msg)
-  except IOError as ex:
-    return err(ex.msg)
-
-  loadTrustedSetup(g1, g2)
-
 proc toCommitment*(ctx: KzgCtx,
                    blob: KzgBlob):
                      Result[KzgCommitment, string] {.gcsafe.} =
@@ -210,7 +158,7 @@ template loadTrustedSetupFile*(input: File | string): untyped =
 
 template freeTrustedSetup*(ctx: KzgCtx) =
   free_trusted_setup(ctx.val)
-  
+
 template blobToKzgCommitment*(ctx: KzgCtx,
                    blob: KzgBlob): untyped =
   toCommitment(ctx, blob)

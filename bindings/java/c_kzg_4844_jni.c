@@ -48,7 +48,6 @@ KZGSettings *allocate_settings(JNIEnv *env)
   }
   else
   {
-    s->max_width = 0;
     s->roots_of_unity = NULL;
     s->g1_values = NULL;
     s->g2_values = NULL;
@@ -87,50 +86,6 @@ JNIEXPORT void JNICALL Java_ethereum_ckzg4844_CKZG4844JNI_loadTrustedSetup__Ljav
 
   (*env)->ReleaseStringUTFChars(env, file, file_native);
   fclose(f);
-
-  if (ret != C_KZG_OK)
-  {
-    reset_trusted_setup();
-    throw_c_kzg_exception(env, ret, "There was an error while loading the Trusted Setup.");
-    return;
-  }
-}
-
-JNIEXPORT void JNICALL Java_ethereum_ckzg4844_CKZG4844JNI_loadTrustedSetup___3BJ_3BJ(JNIEnv *env, jclass thisCls, jbyteArray g1, jlong g1Count, jbyteArray g2, jlong g2Count)
-{
-  if (settings)
-  {
-    throw_exception(env, "Trusted Setup is already loaded. Free it before loading a new one.");
-    return;
-  }
-
-  size_t g1_bytes = (size_t)(*env)->GetArrayLength(env, g1);
-  size_t g1_expected_bytes = (size_t)g1Count * 48;
-
-  if (g1_bytes != g1_expected_bytes)
-  {
-    throw_invalid_size_exception(env, "Invalid g1 size.", g1_bytes, g1_expected_bytes);
-    return;
-  }
-
-  size_t g2_bytes = (size_t)(*env)->GetArrayLength(env, g2);
-  size_t g2_expected_bytes = (size_t)g2Count * 96;
-
-  if (g2_bytes != g2_expected_bytes)
-  {
-    throw_invalid_size_exception(env, "Invalid g2 size.", g2_bytes, g2_expected_bytes);
-    return;
-  }
-
-  settings = allocate_settings(env);
-
-  jbyte *g1_native = (*env)->GetByteArrayElements(env, g1, NULL);
-  jbyte *g2_native = (*env)->GetByteArrayElements(env, g2, NULL);
-
-  C_KZG_RET ret = load_trusted_setup(settings, (uint8_t *)g1_native, (size_t)g1Count, (uint8_t *)g2_native, (size_t)g2Count);
-
-  (*env)->ReleaseByteArrayElements(env, g1, g1_native, JNI_ABORT);
-  (*env)->ReleaseByteArrayElements(env, g2, g2_native, JNI_ABORT);
 
   if (ret != C_KZG_OK)
   {

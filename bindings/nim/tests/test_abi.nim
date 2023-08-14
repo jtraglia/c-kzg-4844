@@ -57,19 +57,16 @@ proc createKateBlobs(s: KzgSettings, n: int): KateBlobs =
     doAssert blob_to_kzg_commitment(kate, result.blobs[i], s) == KZG_OK
     result.kates.add(kate)
 
-let
-  kzgs = readSetup()
-
 suite "verify proof (abi)":
   let
     settings = readSetup(trustedSetupFile)
 
   test "verify batch proof success":
-    var kb = kzgs.createKateBlobs(nblobs)
+    var kb = settings.createKateBlobs(nblobs)
     var kp: array[nblobs, KzgProof]
 
     for i in 0..<nblobs:
-      let res = compute_blob_kzg_proof(kp[i], kb.blobs[i], kb.kates[i], kzgs)
+      let res = compute_blob_kzg_proof(kp[i], kb.blobs[i], kb.kates[i], settings)
       check res == KZG_OK
 
     var ok: bool
@@ -78,21 +75,21 @@ suite "verify proof (abi)":
                          kb.kates[0].addr,
                          kp[0].addr,
                          csize_t(nblobs),
-                         kzgs)
+                         settings)
     check res == KZG_OK
     check ok
 
   test "verify batch proof failure":
-    var kb = kzgs.createKateBlobs(nblobs)
+    var kb = settings.createKateBlobs(nblobs)
     var kp: array[nblobs, KzgProof]
 
     for i in 0..<nblobs:
-      let res = compute_blob_kzg_proof(kp[i], kb.blobs[i], kb.kates[i], kzgs)
+      let res = compute_blob_kzg_proof(kp[i], kb.blobs[i], kb.kates[i], settings)
       check res == KZG_OK
 
-    var other = kzgs.createKateBlobs(nblobs)
+    var other = settings.createKateBlobs(nblobs)
     for i in 0..<nblobs:
-      let res = compute_blob_kzg_proof(kp[i], other.blobs[i], other.kates[i], kzgs)
+      let res = compute_blob_kzg_proof(kp[i], other.blobs[i], other.kates[i], settings)
       check res == KZG_OK
 
     var ok: bool
@@ -101,30 +98,30 @@ suite "verify proof (abi)":
                          kb.kates[0].addr,
                          kp[0].addr,
                          csize_t(nblobs),
-                         kzgs)
+                         settings)
     check res == KZG_OK
     check ok == false
 
   test "verify blob proof":
     var kp: KzgProof
-    var res = compute_blob_kzg_proof(kp, blob, commitment, kzgs)
+    var res = compute_blob_kzg_proof(kp, blob, commitment, settings)
     check res == KZG_OK
 
     var ok: bool
-    res = verify_blob_kzg_proof(ok, blob, commitment, kp, kzgs)
+    res = verify_blob_kzg_proof(ok, blob, commitment, kp, settings)
     check res == KZG_OK
     check ok
 
   test "verify proof":
     var kp: KzgProof
     var ky: KzgBytes32
-    var res = compute_kzg_proof(kp, ky, blob, inputPoint, kzgs)
+    var res = compute_kzg_proof(kp, ky, blob, inputPoint, settings)
     check res == KZG_OK
     check kp == proof
     check ky == claimedValue
 
     var ok: bool
-    res = verify_kzg_proof(ok, commitment, inputPoint, claimedValue, kp, kzgs)
+    res = verify_kzg_proof(ok, commitment, inputPoint, claimedValue, kp, settings)
     check res == KZG_OK
     check ok
 

@@ -22,7 +22,7 @@ proc createKateBlobs(n: int): KateBlobs =
 
 suite "verify proof (extended version)":
   test "load trusted setup from string":
-    let res = Kzg.loadTrustedSetupFromString(trustedSetup)
+    let res = Kzg.loadTrustedSetup(trustedSetupFile)
     check res.isOk
 
   test "verify batch proof success":
@@ -86,5 +86,5 @@ suite "verify proof (extended version)":
     discard verifyBlobKzgProofBatch(kb.blobs, kb.kates, [kp.get.proof])
 
   test "load trusted setup more than once":
-    let res = Kzg.loadTrustedSetupFromString(trustedSetup)
+    let res = Kzg.loadTrustedSetup(trustedSetupFile)
     check res.isErr

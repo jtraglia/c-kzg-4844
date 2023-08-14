@@ -12,7 +12,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	err := LoadTrustedSetupFile("../../src/trusted_setup.txt")
+	err := LoadTrustedSetupFile("../../src/mainnet.tsif")
 	if err != nil {
 		panic("failed to load trusted setup")
 	}

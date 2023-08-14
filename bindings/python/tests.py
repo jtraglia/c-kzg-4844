@@ -164,7 +164,7 @@ def test_verify_blob_kzg_proof_batch(ts):
 ###############################################################################
 
 if __name__ == "__main__":
-    ts = ckzg.load_trusted_setup("../../src/trusted_setup.txt")
+    ts = ckzg.load_trusted_setup("../../src/mainnet.tsif")
 
     test_blob_to_kzg_commitment(ts)
     test_compute_kzg_proof(ts)

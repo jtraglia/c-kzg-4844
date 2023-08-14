@@ -181,7 +181,7 @@ func GenerateCorpus_VerifyBlobKZGProofBatch() {
 ///////////////////////////////////////////////////////////////////////////////
 
 func main() {
-	ret := ckzg.LoadTrustedSetupFile("../../src/trusted_setup.txt")
+	ret := ckzg.LoadTrustedSetupFile("../../src/mainnet.tsif")
 	if ret != ckzg.C_KZG_OK {
 		panic("failed to load trusted setup")
 	}

@@ -26,7 +26,7 @@ fn generate_random_blob(rng: &mut ThreadRng) -> Blob {
 pub fn criterion_benchmark(c: &mut Criterion) {
     let max_count: usize = 64;
     let mut rng = rand::thread_rng();
-    let trusted_setup_file = PathBuf::from("../../src/trusted_setup.txt");
+    let trusted_setup_file = PathBuf::from("../../src/mainnet.tsif");
     assert!(trusted_setup_file.exists());
     let kzg_settings = Arc::new(KzgSettings::load_trusted_setup_file(trusted_setup_file).unwrap());
 
