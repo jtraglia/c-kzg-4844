@@ -1491,28 +1491,6 @@ void FREE_TRUSTED_SETUP(KZGSettings *s) {
     c_kzg_free(s->g2_values);
 }
 
-typedef struct __attribute__((__packed__)) {
-    byte magic[12];
-    byte version[4];
-    char protocol[32];
-    char curve[15];
-    uint8_t fields;
-} TsifHeader;
-
-typedef struct __attribute__((__packed__)) {
-    char description[15];
-    byte type[2];
-    byte order[3];
-    byte element_size[4];
-    byte num_elements[8];
-} TsifSchema;
-
-typedef enum {
-    TSIF_SCHEMA_TYPE_G1 = 12647,
-    TSIF_SCHEMA_TYPE_G2 = 12903,
-    TSIF_SCHEMA_TYPE_FR = 29286
-} TsifType;
-
 /**
  * Read the trusted setup file contents.
  *
@@ -1553,6 +1531,28 @@ out_success:
     return ret;
 }
 
+typedef struct __attribute__((__packed__)) {
+    byte magic[12];
+    byte version[4];
+    char protocol[32];
+    char curve[15];
+    uint8_t fields;
+} TsifHeader;
+
+typedef struct __attribute__((__packed__)) {
+    char description[15];
+    byte type[2];
+    byte order[3];
+    byte element_size[4];
+    byte num_elements[8];
+} TsifSchema;
+
+typedef enum {
+    TSIF_SCHEMA_TYPE_G1 = 12647,
+    TSIF_SCHEMA_TYPE_G2 = 12903,
+    TSIF_SCHEMA_TYPE_FR = 29286
+} TsifType;
+
 /**
  * Load trusted setup from a file.
  *
@@ -1586,17 +1586,23 @@ C_KZG_RET LOAD_TRUSTED_SETUP_FILE(KZGSettings *out, FILE *in) {
 
     TsifHeader *header = (TsifHeader *)tsif;
 
-    /* Check that the magic value matches */
+    /* Perform sanity checks */
     byte expected_magic[12] = {
         0xE2, 0x88, 0x83, 0xE2, 0x8B, 0x83, 0xE2, 0x88, 0x88, 0xE2, 0x88, 0x8E};
-    if (memcmp(header->magic, expected_magic, sizeof(expected_magic)) != 0) {
+    if (memcmp(header->magic, expected_magic, 12) != 0) {
         ret = C_KZG_BADARGS;
         goto out_error;
     }
-
-    /* Check the version string */
     byte expected_version[12] = {'v', 0x01, '.', 0x00};
     if (memcmp(header->version, expected_version, 4) != 0) {
+        ret = C_KZG_BADARGS;
+        goto out_error;
+    }
+    if (memcmp(header->protocol, "ethereum_deneb_kzg", 18) != 0) {
+        ret = C_KZG_BADARGS;
+        goto out_error;
+    }
+    if (memcmp(header->curve, "bls12_381", 9) != 0) {
         ret = C_KZG_BADARGS;
         goto out_error;
     }
@@ -1640,7 +1646,7 @@ C_KZG_RET LOAD_TRUSTED_SETUP_FILE(KZGSettings *out, FILE *in) {
                 ret = C_KZG_BADARGS;
                 goto out_error;
             }
-            if (strcmp(schema->description, "srs_lagrange") != 0) {
+            if (memcmp(schema->description, "srs_lagrange", 12) != 0) {
                 ret = C_KZG_BADARGS;
                 goto out_error;
             }
@@ -1672,7 +1678,7 @@ C_KZG_RET LOAD_TRUSTED_SETUP_FILE(KZGSettings *out, FILE *in) {
                 ret = C_KZG_BADARGS;
                 goto out_error;
             }
-            if (strcmp(schema->description, "srs_monomial") != 0) {
+            if (memcmp(schema->description, "srs_monomial", 12) != 0) {
                 ret = C_KZG_BADARGS;
                 goto out_error;
             }
@@ -1704,7 +1710,7 @@ C_KZG_RET LOAD_TRUSTED_SETUP_FILE(KZGSettings *out, FILE *in) {
                 ret = C_KZG_BADARGS;
                 goto out_error;
             }
-            if (strcmp(schema->description, "roots_unity") != 0) {
+            if (memcmp(schema->description, "roots_unity", 11) != 0) {
                 ret = C_KZG_BADARGS;
                 goto out_error;
             }
