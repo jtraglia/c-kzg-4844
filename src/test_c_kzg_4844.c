@@ -115,12 +115,6 @@ static void bytes48_from_hex(Bytes48 *out, const char *hex) {
     }
 }
 
-static void get_rand_uint32(uint32_t *out) {
-    Bytes32 b;
-    get_rand_bytes32(&b);
-    *out = *(uint32_t *)(b.bytes);
-}
-
 static void eval_poly(fr_t *out, fr_t *poly_coefficients, fr_t *x) {
     *out = poly_coefficients[FIELD_ELEMENTS_PER_BLOB - 1];
     for (size_t i = FIELD_ELEMENTS_PER_BLOB - 1; i > 0; i--) {
@@ -267,17 +261,6 @@ static void test_fr_pow__test_power_of_two(void) {
     fr_pow(&r, &a, 32);
 
     bool ok = fr_equal(&r, &check);
-    ASSERT_EQUALS(ok, true);
-}
-
-static void test_fr_pow__test_inverse_on_root_of_unity(void) {
-    fr_t a, r;
-
-    blst_fr_from_uint64(&a, SCALE2_ROOT_OF_UNITY[31]);
-
-    fr_pow(&r, &a, 1ULL << 31);
-
-    bool ok = fr_equal(&r, &FR_ONE);
     ASSERT_EQUALS(ok, true);
 }
 
@@ -765,139 +748,6 @@ static void test_validate_kzg_g1__fails_with_mask_bits_001(void) {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Tests for reverse_bits
-///////////////////////////////////////////////////////////////////////////////
-
-static void test_reverse_bits__succeeds_round_trip(void) {
-    uint32_t original;
-    uint32_t reversed;
-    uint32_t reversed_reversed;
-
-    get_rand_uint32(&original);
-    reversed = reverse_bits(original);
-    reversed_reversed = reverse_bits(reversed);
-    ASSERT_EQUALS(reversed_reversed, original);
-}
-
-static void test_reverse_bits__succeeds_all_bits_are_zero(void) {
-    uint32_t original = 0b00000000000000000000000000000000;
-    uint32_t reversed = 0b00000000000000000000000000000000;
-    ASSERT_EQUALS(reverse_bits(original), reversed);
-}
-
-static void test_reverse_bits__succeeds_some_bits_are_one(void) {
-    uint32_t original = 0b10101000011111100000000000000010;
-    uint32_t reversed = 0b01000000000000000111111000010101;
-    ASSERT_EQUALS(reverse_bits(original), reversed);
-}
-
-static void test_reverse_bits__succeeds_all_bits_are_one(void) {
-    uint32_t original = 0b11111111111111111111111111111111;
-    uint32_t reversed = 0b11111111111111111111111111111111;
-    ASSERT_EQUALS(reverse_bits(original), reversed);
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// Tests for bit_reversal_permutation
-///////////////////////////////////////////////////////////////////////////////
-
-static void test_bit_reversal_permutation__succeeds_round_trip(void) {
-    C_KZG_RET ret;
-    uint32_t original[128];
-    uint32_t reversed_reversed[128];
-
-    for (size_t i = 0; i < 128; i++) {
-        get_rand_uint32(&original[i]);
-        reversed_reversed[i] = original[i];
-    }
-    ret = bit_reversal_permutation(&reversed_reversed, sizeof(uint32_t), 128);
-    ASSERT_EQUALS(ret, C_KZG_OK);
-    ret = bit_reversal_permutation(&reversed_reversed, sizeof(uint32_t), 128);
-    ASSERT_EQUALS(ret, C_KZG_OK);
-    for (size_t i = 0; i < 128; i++) {
-        ASSERT_EQUALS(reversed_reversed[i], original[i]);
-    }
-}
-
-static void test_bit_reversal_permutation__specific_items(void) {
-    C_KZG_RET ret;
-    uint32_t original[128];
-    uint32_t reversed[128];
-
-    for (size_t i = 0; i < 128; i++) {
-        get_rand_uint32(&original[i]);
-        reversed[i] = original[i];
-    }
-    ret = bit_reversal_permutation(&reversed, sizeof(uint32_t), 128);
-    ASSERT_EQUALS(ret, C_KZG_OK);
-
-    // Test the first 8 elements of the bit reversal permutation
-    // This tests the ordering of the values, not the values themselves,
-    // so is independent of the randomness used to initialize original[]
-    ASSERT_EQUALS(reversed[0], original[0]);
-    ASSERT_EQUALS(reversed[1], original[64]);
-    ASSERT_EQUALS(reversed[2], original[32]);
-    ASSERT_EQUALS(reversed[3], original[96]);
-    ASSERT_EQUALS(reversed[4], original[16]);
-    ASSERT_EQUALS(reversed[5], original[80]);
-    ASSERT_EQUALS(reversed[6], original[48]);
-    ASSERT_EQUALS(reversed[7], original[112]);
-}
-
-static void test_bit_reversal_permutation__coset_structure(void) {
-    C_KZG_RET ret;
-    uint32_t original[256];
-    uint32_t reversed[256];
-
-    for (size_t i = 0; i < 256; i++) {
-        original[i] = i % 16;
-        reversed[i] = original[i];
-    }
-    ret = bit_reversal_permutation(&reversed, sizeof(uint32_t), 256);
-    ASSERT_EQUALS(ret, C_KZG_OK);
-    for (size_t i = 0; i < 16; i++) {
-        for (size_t j = 1; j < 16; j++) {
-            ASSERT_EQUALS(reversed[16 * i], reversed[16 * i + j]);
-        }
-    }
-}
-
-static void test_bit_reversal_permutation__fails_n_too_large(void) {
-    C_KZG_RET ret;
-    uint32_t reversed[256];
-
-    for (size_t i = 0; i < 256; i++) {
-        reversed[i] = 0;
-    }
-    ret = bit_reversal_permutation(
-        &reversed, sizeof(uint32_t), (uint64_t)1 << 32
-    );
-    ASSERT_EQUALS(ret, C_KZG_BADARGS);
-}
-
-static void test_bit_reversal_permutation__fails_n_not_power_of_two(void) {
-    C_KZG_RET ret;
-    uint32_t reversed[256];
-
-    for (size_t i = 0; i < 256; i++) {
-        reversed[i] = 0;
-    }
-    ret = bit_reversal_permutation(&reversed, sizeof(uint32_t), 255);
-    ASSERT_EQUALS(ret, C_KZG_BADARGS);
-}
-
-static void test_bit_reversal_permutation__fails_n_is_one(void) {
-    C_KZG_RET ret;
-    uint32_t reversed[1];
-
-    for (size_t i = 0; i < 1; i++) {
-        reversed[i] = 0;
-    }
-    ret = bit_reversal_permutation(&reversed, sizeof(uint32_t), 1);
-    ASSERT_EQUALS(ret, C_KZG_BADARGS);
-}
-
-///////////////////////////////////////////////////////////////////////////////
 // Tests for compute_powers
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -1053,39 +903,6 @@ static void test_evaluate_polynomial_in_evaluation_form__random_polynomial(void
     ASSERT_EQUALS(ret, C_KZG_OK);
 
     ASSERT("evaluation methods match", fr_equal(&y, &check));
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// Tests for log2_pow2
-///////////////////////////////////////////////////////////////////////////////
-
-static void test_log2_pow2__succeeds_expected_values(void) {
-    uint32_t x = 1;
-    for (int i = 0; i < 31; i++) {
-        ASSERT_EQUALS(i, log2_pow2(x));
-        x <<= 1;
-    }
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// Tests for is_power_of_two
-///////////////////////////////////////////////////////////////////////////////
-
-static void test_is_power_of_two__succeeds_powers_of_two(void) {
-    uint64_t x = 1;
-    for (int i = 0; i < 63; i++) {
-        ASSERT("is_power_of_two good", is_power_of_two(x));
-        x <<= 1;
-    }
-}
-
-static void test_is_power_of_two__fails_not_powers_of_two(void) {
-    uint64_t x = 4;
-    for (int i = 2; i < 63; i++) {
-        ASSERT("is_power_of_two bad", !is_power_of_two(x + 1));
-        ASSERT("is_power_of_two bad", !is_power_of_two(x - 1));
-        x <<= 1;
-    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1693,40 +1510,6 @@ static void test_verify_kzg_proof_batch__fails_invalid_blob(void) {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Tests for expand_root_of_unity
-///////////////////////////////////////////////////////////////////////////////
-
-static void test_expand_root_of_unity__succeeds_with_root(void) {
-    C_KZG_RET ret;
-    fr_t roots[257], root_of_unity;
-
-    blst_fr_from_uint64(&root_of_unity, SCALE2_ROOT_OF_UNITY[8]);
-
-    ret = expand_root_of_unity(roots, &root_of_unity, 256);
-    ASSERT_EQUALS(ret, C_KZG_OK);
-}
-
-static void test_expand_root_of_unity__fails_not_root_of_unity(void) {
-    C_KZG_RET ret;
-    fr_t roots[257], root_of_unity;
-
-    fr_from_uint64(&root_of_unity, 3);
-
-    ret = expand_root_of_unity(roots, &root_of_unity, 256);
-    ASSERT_EQUALS(ret, C_KZG_BADARGS);
-}
-
-static void test_expand_root_of_unity__fails_wrong_root_of_unity(void) {
-    C_KZG_RET ret;
-    fr_t roots[257], root_of_unity;
-
-    blst_fr_from_uint64(&root_of_unity, SCALE2_ROOT_OF_UNITY[7]);
-
-    ret = expand_root_of_unity(roots, &root_of_unity, 256);
-    ASSERT_EQUALS(ret, C_KZG_BADARGS);
-}
-
-///////////////////////////////////////////////////////////////////////////////
 // Profiling Functions
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -1865,7 +1648,6 @@ int main(void) {
     RUN(test_fr_div__specific_value);
     RUN(test_fr_div__succeeds_round_trip);
     RUN(test_fr_pow__test_power_of_two);
-    RUN(test_fr_pow__test_inverse_on_root_of_unity);
     RUN(test_fr_batch_inv__test_consistent);
     RUN(test_fr_batch_inv__test_zero);
     RUN(test_g1_mul__test_consistent);
@@ -1893,25 +1675,12 @@ int main(void) {
     RUN(test_validate_kzg_g1__fails_with_mask_bits_111);
     RUN(test_validate_kzg_g1__fails_with_mask_bits_011);
     RUN(test_validate_kzg_g1__fails_with_mask_bits_001);
-    RUN(test_reverse_bits__succeeds_round_trip);
-    RUN(test_reverse_bits__succeeds_all_bits_are_zero);
-    RUN(test_reverse_bits__succeeds_some_bits_are_one);
-    RUN(test_reverse_bits__succeeds_all_bits_are_one);
-    RUN(test_bit_reversal_permutation__succeeds_round_trip);
-    RUN(test_bit_reversal_permutation__specific_items);
-    RUN(test_bit_reversal_permutation__coset_structure);
-    RUN(test_bit_reversal_permutation__fails_n_too_large);
-    RUN(test_bit_reversal_permutation__fails_n_not_power_of_two);
-    RUN(test_bit_reversal_permutation__fails_n_is_one);
     RUN(test_compute_powers__succeeds_expected_powers);
     RUN(test_g1_lincomb__verify_consistent);
     RUN(test_evaluate_polynomial_in_evaluation_form__constant_polynomial);
     RUN(test_evaluate_polynomial_in_evaluation_form__constant_polynomial_in_range
     );
     RUN(test_evaluate_polynomial_in_evaluation_form__random_polynomial);
-    RUN(test_log2_pow2__succeeds_expected_values);
-    RUN(test_is_power_of_two__succeeds_powers_of_two);
-    RUN(test_is_power_of_two__fails_not_powers_of_two);
     RUN(test_compute_kzg_proof__succeeds_expected_proof);
     RUN(test_compute_and_verify_kzg_proof__succeeds_round_trip);
     RUN(test_compute_and_verify_kzg_proof__succeeds_within_domain);
@@ -1933,9 +1702,6 @@ int main(void) {
     RUN(test_verify_kzg_proof_batch__fails_proof_not_in_g1);
     RUN(test_verify_kzg_proof_batch__fails_commitment_not_in_g1);
     RUN(test_verify_kzg_proof_batch__fails_invalid_blob);
-    RUN(test_expand_root_of_unity__succeeds_with_root);
-    RUN(test_expand_root_of_unity__fails_not_root_of_unity);
-    RUN(test_expand_root_of_unity__fails_wrong_root_of_unity);
 
     /*
      * These functions are only executed if we're profiling. To me, it makes

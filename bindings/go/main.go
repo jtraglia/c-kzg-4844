@@ -130,7 +130,7 @@ LoadTrustedSetup is the binding for:
 	    const uint8_t *g2_bytes,
 	    size_t n2);
 */
-func LoadTrustedSetup(g1Bytes, g2Bytes []byte) error {
+func LoadTrustedSetup(g1Bytes, g2Bytes, rootsBytes []byte) error {
 	if loaded {
 		panic("trusted setup is already loaded")
 	}
@@ -140,14 +140,20 @@ func LoadTrustedSetup(g1Bytes, g2Bytes []byte) error {
 	if len(g2Bytes)%C.BYTES_PER_G2 != 0 {
 		panic(fmt.Sprintf("len(g2Bytes) is not a multiple of %v", C.BYTES_PER_G2))
 	}
+	if len(rootsBytes)%C.BYTES_PER_FIELD_ELEMENT != 0 {
+		panic(fmt.Sprintf("len(rootsBytes) is not a multiple of %v", C.BYTES_PER_FIELD_ELEMENT))
+	}
 	numG1Elements := len(g1Bytes) / C.BYTES_PER_G1
 	numG2Elements := len(g2Bytes) / C.BYTES_PER_G2
+	numRoots := len(rootsBytes) / C.BYTES_PER_FIELD_ELEMENT
 	ret := C.load_trusted_setup(
 		&settings,
 		*(**C.uint8_t)(unsafe.Pointer(&g1Bytes)),
 		(C.size_t)(numG1Elements),
 		*(**C.uint8_t)(unsafe.Pointer(&g2Bytes)),
-		(C.size_t)(numG2Elements))
+		(C.size_t)(numG2Elements),
+		*(**C.uint8_t)(unsafe.Pointer(&rootsBytes)),
+		(C.size_t)(numRoots))
 	if ret == C.C_KZG_OK {
 		loaded = true
 	}

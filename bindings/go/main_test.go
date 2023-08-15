@@ -6,13 +6,18 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 )
 
 func TestMain(m *testing.M) {
+	start := time.Now()
 	err := LoadTrustedSetupFile("../../src/trusted_setup.txt")
+	elapsed := time.Since(start)
+	fmt.Printf("The function took %v to execute.\n", elapsed)
+
 	if err != nil {
 		panic("failed to load trusted setup")
 	}

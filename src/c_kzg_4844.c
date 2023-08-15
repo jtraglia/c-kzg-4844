@@ -30,10 +30,6 @@
 // Macros
 ///////////////////////////////////////////////////////////////////////////////
 
-/** Returns C_KZG_BADARGS if the condition is not met. */
-#define CHECK(cond) \
-    if (!(cond)) return C_KZG_BADARGS
-
 /** Returns number of elements in a statically defined array. */
 #define NUM_ELEMENTS(a) (sizeof(a) / sizeof(a[0]))
 
@@ -88,65 +84,6 @@ static const g1_t G1_IDENTITY = {
     {0L, 0L, 0L, 0L, 0L, 0L},
     {0L, 0L, 0L, 0L, 0L, 0L},
     {0L, 0L, 0L, 0L, 0L, 0L}};
-
-/**
- * The first 32 roots of unity in the finite field F_r.
- * SCALE2_ROOT_OF_UNITY[i] is a 2^i'th root of unity.
- *
- * For element `{A, B, C, D}`, the field element value is
- * `A + B * 2^64 + C * 2^128 + D * 2^192`. This format may be converted to
- * an `fr_t` type via the blst_fr_from_uint64() function.
- *
- * The decimal values may be calculated with the following Python code:
- * @code{.py}
- * MODULUS = 52435875175126190479447740508185965837690552500527637822603658699938581184513
- * PRIMITIVE_ROOT = 7
- * [pow(PRIMITIVE_ROOT, (MODULUS - 1) // (2**i), MODULUS) for i in range(32)]
- * @endcode
- *
- * Note: Being a "primitive root" in this context means that `r^k != 1` for any
- * `k < q-1` where q is the modulus. So powers of r generate the field. This is
- * also known as being a "primitive element".
- *
- * In the formula above, the restriction can be slightly relaxed to `r` being a non-square.
- * This is easy to check: We just require that r^((q-1)/2) == -1. Instead of
- * 5, we could use 7, 10, 13, 14, 15, 20... to create the 2^i'th roots of unity below.
- * Generally, there are a lot of primitive roots:
- * https://crypto.stanford.edu/pbc/notes/numbertheory/gen.html
- */
-static const uint64_t SCALE2_ROOT_OF_UNITY[][4] = {
-    {0x0000000000000001L, 0x0000000000000000L, 0x0000000000000000L, 0x0000000000000000L},
-    {0xffffffff00000000L, 0x53bda402fffe5bfeL, 0x3339d80809a1d805L, 0x73eda753299d7d48L},
-    {0x0001000000000000L, 0xec03000276030000L, 0x8d51ccce760304d0L, 0x0000000000000000L},
-    {0x7228fd3397743f7aL, 0xb38b21c28713b700L, 0x8c0625cd70d77ce2L, 0x345766f603fa66e7L},
-    {0x53ea61d87742bcceL, 0x17beb312f20b6f76L, 0xdd1c0af834cec32cL, 0x20b1ce9140267af9L},
-    {0x360c60997369df4eL, 0xbf6e88fb4c38fb8aL, 0xb4bcd40e22f55448L, 0x50e0903a157988baL},
-    {0x8140d032f0a9ee53L, 0x2d967f4be2f95155L, 0x14a1e27164d8fdbdL, 0x45af6345ec055e4dL},
-    {0x5130c2c1660125beL, 0x98d0caac87f5713cL, 0xb7c68b4d7fdd60d0L, 0x6898111413588742L},
-    {0x4935bd2f817f694bL, 0x0a0865a899e8deffL, 0x6b368121ac0cf4adL, 0x4f9b4098e2e9f12eL},
-    {0x4541b8ff2ee0434eL, 0xd697168a3a6000feL, 0x39feec240d80689fL, 0x095166525526a654L},
-    {0x3c28d666a5c2d854L, 0xea437f9626fc085eL, 0x8f4de02c0f776af3L, 0x325db5c3debf77a1L},
-    {0x4a838b5d59cd79e5L, 0x55ea6811be9c622dL, 0x09f1ca610a08f166L, 0x6d031f1b5c49c834L},
-    {0xe206da11a5d36306L, 0x0ad1347b378fbf96L, 0xfc3e8acfe0f8245fL, 0x564c0a11a0f704f4L},
-    {0x6fdd00bfc78c8967L, 0x146b58bc434906acL, 0x2ccddea2972e89edL, 0x485d512737b1da3dL},
-    {0x034d2ff22a5ad9e1L, 0xae4622f6a9152435L, 0xdc86b01c0d477fa6L, 0x56624634b500a166L},
-    {0xfbd047e11279bb6eL, 0xc8d5f51db3f32699L, 0x483405417a0cbe39L, 0x3291357ee558b50dL},
-    {0xd7118f85cd96b8adL, 0x67a665ae1fcadc91L, 0x88f39a78f1aeb578L, 0x2155379d12180caaL},
-    {0x08692405f3b70f10L, 0xcd7f2bd6d0711b7dL, 0x473a2eef772c33d6L, 0x224262332d8acbf4L},
-    {0x6f421a7d8ef674fbL, 0xbb97a3bf30ce40fdL, 0x652f717ae1c34bb0L, 0x2d3056a530794f01L},
-    {0x194e8c62ecb38d9dL, 0xad8e16e84419c750L, 0xdf625e80d0adef90L, 0x520e587a724a6955L},
-    {0xfece7e0e39898d4bL, 0x2f69e02d265e09d9L, 0xa57a6e07cb98de4aL, 0x03e1c54bcb947035L},
-    {0xcd3979122d3ea03aL, 0x46b3105f04db5844L, 0xc70d0874b0691d4eL, 0x47c8b5817018af4fL},
-    {0xc6e7a6ffb08e3363L, 0xe08fec7c86389beeL, 0xf2d38f10fbb8d1bbL, 0x0abe6a5e5abcaa32L},
-    {0x5616c57de0ec9eaeL, 0xc631ffb2585a72dbL, 0x5121af06a3b51e3cL, 0x73560252aa0655b2L},
-    {0x92cf4deb77bd779cL, 0x72cf6a8029b7d7bcL, 0x6e0bcd91ee762730L, 0x291cf6d68823e687L},
-    {0xce32ef844e11a51eL, 0xc0ba12bb3da64ca5L, 0x0454dc1edc61a1a3L, 0x019fe632fd328739L},
-    {0x531a11a0d2d75182L, 0x02c8118402867ddcL, 0x116168bffbedc11dL, 0x0a0a77a3b1980c0dL},
-    {0xe2d0a7869f0319edL, 0xb94f1101b1d7a628L, 0xece8ea224f31d25dL, 0x23397a9300f8f98bL},
-    {0xd7b688830a4f2089L, 0x6558e9e3f6ac7b41L, 0x99e276b571905a7dL, 0x52dd465e2f094256L},
-    {0x474650359d8e211bL, 0x84d37b826214abc6L, 0x8da40c1ef2bb4598L, 0x0c83ea7744bf1beeL},
-    {0x694341f608c9dd56L, 0xed3a181fabb30adcL, 0x1339a815da8b398fL, 0x2c6d4e4511657e1eL},
-    {0x63e7cb4906ffc93fL, 0xf070bb00e28a193dL, 0xad1715b02e5713b5L, 0x4b5371495990693fL}};
 
 /** The zero field element. */
 static const fr_t FR_ZERO = {0L, 0L, 0L, 0L};
@@ -232,20 +169,6 @@ static C_KZG_RET new_fr_array(fr_t **x, size_t n) {
 ///////////////////////////////////////////////////////////////////////////////
 // Helper Functions
 ///////////////////////////////////////////////////////////////////////////////
-
-/**
- * Test whether the operand is one in the finite field.
- *
- * @param[in] p The field element to be checked
- *
- * @retval true  The element is one
- * @retval false The element is not one
- */
-static bool fr_is_one(const fr_t *p) {
-    uint64_t a[4];
-    blst_uint64_from_fr(a, p);
-    return a[0] == 1 && a[1] == 0 && a[2] == 0 && a[3] == 0;
-}
 
 /**
  * Test whether the operand is zero in the finite field.
@@ -1447,177 +1370,6 @@ out:
 ///////////////////////////////////////////////////////////////////////////////
 
 /**
- * Utility function to test whether the argument is a power of two.
- *
- * @remark This method returns `true` for `is_power_of_two(0)` which is a bit
- *     weird, but not an issue in the contexts in which we use it.
- *
- * @param[in] n The number to test
- * @retval true  if @p n is a power of two or zero
- * @retval false otherwise
- */
-static bool is_power_of_two(uint64_t n) {
-    return (n & (n - 1)) == 0;
-}
-
-/**
- * Reverse the bit order in a 32 bit integer.
- *
- * @param[in] a The integer to be reversed
- * @return An integer with the bits of @p a reversed
- */
-static uint32_t reverse_bits(uint32_t n) {
-    uint32_t result = 0;
-    for (int i = 0; i < 32; ++i) {
-        result <<= 1;
-        result |= (n & 1);
-        n >>= 1;
-    }
-    return result;
-}
-
-/**
- * Calculate log base two of a power of two.
- *
- * In other words, the bit index of the one bit.
- *
- * @remark Works only for n a power of two, and only for n up to 2^31.
- * @remark Not the fastest implementation, but it doesn't need to be fast.
- *
- * @param[in] n The power of two
- *
- * @return the log base two of n
- */
-static int log2_pow2(uint32_t n) {
-    int position = 0;
-    while (n >>= 1)
-        position++;
-    return position;
-}
-
-/**
- * Reorder an array in reverse bit order of its indices.
- *
- * @remark Operates in-place on the array.
- * @remark Can handle arrays of any type: provide the element size in @p size.
- * @remark This means that input[n] == output[n'], where input and output
- *         denote the input and output array and n' is obtained from n by
- *         bit-reversing n. As opposed to reverse_bits, this bit-reversal
- *         operates on log2(@p n)-bit numbers.
- *
- * @param[in,out] values The array, which is re-ordered in-place
- * @param[in]     size   The size in bytes of an element of the array
- * @param[in]     n      The length of the array, must be a power of two
- *                       strictly greater than 1 and less than 2^32.
- */
-static C_KZG_RET bit_reversal_permutation(
-    void *values, size_t size, uint64_t n
-) {
-    CHECK(n != 0);
-    CHECK(n >> 32 == 0);
-    CHECK(is_power_of_two(n));
-    CHECK(log2_pow2(n) != 0);
-
-    /* copy pointer and convert from void* to byte* */
-    byte *v = values;
-
-    /* allocate scratch space for swapping an entry of the values array */
-    byte *tmp = NULL;
-    C_KZG_RET ret = c_kzg_malloc((void **)&tmp, size);
-    if (ret != C_KZG_OK) {
-        return ret;
-    }
-
-    int unused_bit_len = 32 - log2_pow2(n);
-    for (uint32_t i = 0; i < n; i++) {
-        uint32_t r = reverse_bits(i) >> unused_bit_len;
-        if (r > i) {
-            /* Swap the two elements */
-            memcpy(tmp, v + (i * size), size);
-            memcpy(v + (i * size), v + (r * size), size);
-            memcpy(v + (r * size), tmp, size);
-        }
-    }
-    c_kzg_free(tmp);
-
-    return C_KZG_OK;
-}
-
-/**
- * Generate powers of a root of unity in the field.
- *
- * @remark @p root must be such that @p root ^ @p width is equal to one, but
- * no smaller power of @p root is equal to one.
- *
- * @param[out] out   The generated powers of the root of unity
- *                   (array size @p width + 1)
- * @param[in]  root  A root of unity
- * @param[in]  width One less than the size of @p out
- */
-static C_KZG_RET expand_root_of_unity(
-    fr_t *out, const fr_t *root, uint64_t width
-) {
-    out[0] = FR_ONE;
-    out[1] = *root;
-
-    for (uint64_t i = 2; !fr_is_one(&out[i - 1]); i++) {
-        CHECK(i <= width);
-        blst_fr_mul(&out[i], &out[i - 1], root);
-    }
-    CHECK(fr_is_one(&out[width]));
-
-    return C_KZG_OK;
-}
-
-/**
- * Initialize the roots of unity.
- *
- * @remark `roots_of_unity_out` may be modified even if there's an error.
- *
- * @param[out] roots_of_unity_out The roots of unity
- * @param[in]  max_scale          Log base 2 of the number of roots of unity to
- *                                be initialized
- */
-static C_KZG_RET compute_roots_of_unity(
-    fr_t *roots_of_unity_out, uint32_t max_scale
-) {
-    C_KZG_RET ret;
-    uint64_t max_width;
-    fr_t root_of_unity;
-    fr_t *expanded_roots = NULL;
-
-    /* Calculate the max width */
-    max_width = 1ULL << max_scale;
-
-    /* Get the root of unity */
-    CHECK(max_scale < NUM_ELEMENTS(SCALE2_ROOT_OF_UNITY));
-    blst_fr_from_uint64(&root_of_unity, SCALE2_ROOT_OF_UNITY[max_scale]);
-
-    /*
-     * Allocate an array to store the expanded roots of unity. We do this
-     * instead of re-using roots_of_unity_out because the expansion requires
-     * max_width+1 elements.
-     */
-    ret = new_fr_array(&expanded_roots, max_width + 1);
-    if (ret != C_KZG_OK) goto out;
-
-    /* Populate the roots of unity */
-    ret = expand_root_of_unity(expanded_roots, &root_of_unity, max_width);
-    if (ret != C_KZG_OK) goto out;
-
-    /* Copy all but the last root to the roots of unity */
-    memcpy(roots_of_unity_out, expanded_roots, sizeof(fr_t) * max_width);
-
-    /* Permute the roots of unity */
-    ret = bit_reversal_permutation(roots_of_unity_out, sizeof(fr_t), max_width);
-    if (ret != C_KZG_OK) goto out;
-
-out:
-    c_kzg_free(expanded_roots);
-    return ret;
-}
-
-/**
  * Free a trusted setup (KZGSettings).
  *
  * @remark It's a NOP if `s` is NULL.
@@ -1675,33 +1427,27 @@ C_KZG_RET LOAD_TRUSTED_SETUP(
     const uint8_t *g1_bytes,
     size_t n1,
     const uint8_t *g2_bytes,
-    size_t n2
+    size_t n2,
+    const uint8_t *roots_bytes,
+    size_t n3
 ) {
     C_KZG_RET ret;
 
-    out->max_width = 0;
-    out->roots_of_unity = NULL;
     out->g1_values = NULL;
     out->g2_values = NULL;
+    out->roots_of_unity = NULL;
 
     /* Sanity check in case this is called directly */
-    CHECK(n1 == TRUSTED_SETUP_NUM_G1_POINTS);
-    CHECK(n2 == TRUSTED_SETUP_NUM_G2_POINTS);
-
-    /* 1<<max_scale is the smallest power of 2 >= n1 */
-    uint32_t max_scale = 0;
-    while ((1ULL << max_scale) < n1)
-        max_scale++;
-
-    /* Set the max_width */
-    out->max_width = 1ULL << max_scale;
+    if (n1 != TRUSTED_SETUP_NUM_G1_POINTS) return C_KZG_BADARGS;
+    if (n2 != TRUSTED_SETUP_NUM_G2_POINTS) return C_KZG_BADARGS;
+    if (n3 != TRUSTED_SETUP_NUM_G1_POINTS) return C_KZG_BADARGS;
 
     /* Allocate all of our arrays */
-    ret = new_fr_array(&out->roots_of_unity, out->max_width);
-    if (ret != C_KZG_OK) goto out_error;
     ret = new_g1_array(&out->g1_values, n1);
     if (ret != C_KZG_OK) goto out_error;
     ret = new_g2_array(&out->g2_values, n2);
+    if (ret != C_KZG_OK) goto out_error;
+    ret = new_fr_array(&out->roots_of_unity, n3);
     if (ret != C_KZG_OK) goto out_error;
 
     /* Convert all g1 bytes to g1 points */
@@ -1730,14 +1476,17 @@ C_KZG_RET LOAD_TRUSTED_SETUP(
         blst_p2_from_affine(&out->g2_values[i], &g2_affine);
     }
 
+    /* Convert all roots bytes to field elements */
+    for (uint64_t i = 0; i < n3; i++) {
+        blst_scalar scalar;
+        blst_scalar_from_bendian(
+            &scalar, &roots_bytes[BYTES_PER_FIELD_ELEMENT * i]
+        );
+        blst_fr_from_scalar(&out->roots_of_unity[i], &scalar);
+    }
+
     /* Make sure the trusted setup was loaded in Lagrange form */
     ret = is_trusted_setup_in_lagrange_form(out, n1, n2);
-    if (ret != C_KZG_OK) goto out_error;
-
-    /* Compute roots of unity and permute the G1 trusted setup */
-    ret = compute_roots_of_unity(out->roots_of_unity, max_scale);
-    if (ret != C_KZG_OK) goto out_error;
-    ret = bit_reversal_permutation(out->g1_values, sizeof(g1_t), n1);
     if (ret != C_KZG_OK) goto out_error;
 
     goto out_success;
@@ -1767,38 +1516,88 @@ out_success:
  * @param[in]  in  File handle for input
  */
 C_KZG_RET LOAD_TRUSTED_SETUP_FILE(KZGSettings *out, FILE *in) {
+    C_KZG_RET ret;
     int num_matches;
     uint64_t i;
-    uint8_t g1_bytes[TRUSTED_SETUP_NUM_G1_POINTS * BYTES_PER_G1];
-    uint8_t g2_bytes[TRUSTED_SETUP_NUM_G2_POINTS * BYTES_PER_G2];
+    size_t size;
+
+    uint8_t *g1_bytes = NULL;
+    uint8_t *g2_bytes = NULL;
+    uint8_t *roots_bytes = NULL;
+
+    size = TRUSTED_SETUP_NUM_G1_POINTS * BYTES_PER_G1;
+    ret = c_kzg_malloc((void **)&g1_bytes, size);
+    if (ret != C_KZG_OK) {
+        goto out;
+    }
+
+    size = TRUSTED_SETUP_NUM_G2_POINTS * BYTES_PER_G2;
+    ret = c_kzg_malloc((void **)&g2_bytes, size);
+    if (ret != C_KZG_OK) {
+        goto out;
+    }
+
+    size = TRUSTED_SETUP_NUM_G1_POINTS * BYTES_PER_FIELD_ELEMENT;
+    ret = c_kzg_malloc((void **)&roots_bytes, size);
+    if (ret != C_KZG_OK) {
+        goto out;
+    }
 
     /* Read the number of g1 points */
     num_matches = fscanf(in, "%" SCNu64, &i);
-    CHECK(num_matches == 1);
-    CHECK(i == TRUSTED_SETUP_NUM_G1_POINTS);
+    if (num_matches != 1 || i != TRUSTED_SETUP_NUM_G1_POINTS) {
+        ret = C_KZG_BADARGS;
+        goto out;
+    }
 
     /* Read the number of g2 points */
     num_matches = fscanf(in, "%" SCNu64, &i);
-    CHECK(num_matches == 1);
-    CHECK(i == TRUSTED_SETUP_NUM_G2_POINTS);
+    if (num_matches != 1 || i != TRUSTED_SETUP_NUM_G2_POINTS) {
+        ret = C_KZG_BADARGS;
+        goto out;
+    }
 
     /* Read all of the g1 points, byte by byte */
     for (i = 0; i < TRUSTED_SETUP_NUM_G1_POINTS * BYTES_PER_G1; i++) {
         num_matches = fscanf(in, "%2hhx", &g1_bytes[i]);
-        CHECK(num_matches == 1);
+        if (num_matches != 1) {
+            ret = C_KZG_BADARGS;
+            goto out;
+        }
     }
 
     /* Read all of the g2 points, byte by byte */
     for (i = 0; i < TRUSTED_SETUP_NUM_G2_POINTS * BYTES_PER_G2; i++) {
         num_matches = fscanf(in, "%2hhx", &g2_bytes[i]);
-        CHECK(num_matches == 1);
+        if (num_matches != 1) {
+            ret = C_KZG_BADARGS;
+            goto out;
+        }
     }
 
-    return LOAD_TRUSTED_SETUP(
+    /* Read all of the roots of unity, byte by byte */
+    for (i = 0; i < TRUSTED_SETUP_NUM_G1_POINTS * BYTES_PER_FIELD_ELEMENT;
+         i++) {
+        num_matches = fscanf(in, "%2hhx", &roots_bytes[i]);
+        if (num_matches != 1) {
+            ret = C_KZG_BADARGS;
+            goto out;
+        }
+    }
+
+    ret = LOAD_TRUSTED_SETUP(
         out,
         g1_bytes,
         TRUSTED_SETUP_NUM_G1_POINTS,
         g2_bytes,
-        TRUSTED_SETUP_NUM_G2_POINTS
+        TRUSTED_SETUP_NUM_G2_POINTS,
+        roots_bytes,
+        TRUSTED_SETUP_NUM_G1_POINTS
     );
+
+out:
+    c_kzg_free(g1_bytes);
+    c_kzg_free(g2_bytes);
+    c_kzg_free(roots_bytes);
+    return ret;
 }
