@@ -1753,6 +1753,72 @@ out_success:
     return ret;
 }
 
+static C_KZG_RET hexchar_to_byte(uint8_t *out, char c) {
+    if (c >= '0' && c <= '9') {
+        *out = c - '0';
+        return C_KZG_OK;
+    }
+    if (c >= 'a' && c <= 'f') {
+        *out = c - 'a' + 10;
+        return C_KZG_OK;
+    }
+    if (c >= 'A' && c <= 'F') {
+        *out = c - 'A' + 10;
+        return C_KZG_OK;
+    }
+    return C_KZG_BADARGS;
+}
+
+static C_KZG_RET parse_hex_string(uint8_t *out, const char *hex, size_t len) {
+    uint8_t a, b;
+    for (size_t i = 0; i < len; i += 2) {
+        if (hexchar_to_byte(&a, hex[i]) != C_KZG_OK) return C_KZG_BADARGS;
+        if (hexchar_to_byte(&b, hex[i + 1]) != C_KZG_OK) return C_KZG_BADARGS;
+        out[i / 2] = (a << 4) + b;
+    }
+    return C_KZG_OK;
+}
+
+/**
+ * Read the trusted setup file contents.
+ *
+ * @remark The pointer must be freed afterwards.
+ *
+ * @param[out] out    A double-pointer to bytes
+ * @param[out] length Length of the contents
+ * @param[in]  in     File handle for input
+ */
+static C_KZG_RET get_trusted_setup_bytes(
+    char **out, size_t *length, FILE *file
+) {
+    C_KZG_RET ret;
+
+    /* Get the length of the file */
+    fseek(file, 0, SEEK_END);
+    *length = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    /* Allocate space for the file contents */
+    ret = c_kzg_malloc((void **)out, *length);
+    if (ret != C_KZG_OK) {
+        goto out_error;
+    }
+
+    /* Read the file contents */
+    size_t read = fread(*out, 1, *length, file);
+    if (read != *length) {
+        ret = C_KZG_BADARGS;
+        goto out_error;
+    }
+
+    goto out_success;
+
+out_error:
+    c_kzg_free(*out);
+out_success:
+    return ret;
+}
+
 /**
  * Load trusted setup from a file.
  *
@@ -1767,38 +1833,103 @@ out_success:
  * @param[in]  in  File handle for input
  */
 C_KZG_RET LOAD_TRUSTED_SETUP_FILE(KZGSettings *out, FILE *in) {
+    C_KZG_RET ret;
     int num_matches;
     uint64_t i;
-    uint8_t g1_bytes[TRUSTED_SETUP_NUM_G1_POINTS * BYTES_PER_G1];
-    uint8_t g2_bytes[TRUSTED_SETUP_NUM_G2_POINTS * BYTES_PER_G2];
+    uint8_t *g1_bytes = NULL;
+    uint8_t *g2_bytes = NULL;
+    size_t size;
+
+    /* Read the trusted setup file */
+    char *data = NULL;
+    size_t data_length = 0;
+    ret = get_trusted_setup_bytes(&data, &data_length, in);
+    if (ret != C_KZG_OK) {
+        goto out;
+    }
+
+    char *delimiter = "\n";
+    char *line = NULL;
 
     /* Read the number of g1 points */
-    num_matches = fscanf(in, "%" SCNu64, &i);
-    CHECK(num_matches == 1);
-    CHECK(i == TRUSTED_SETUP_NUM_G1_POINTS);
+    line = strtok(data, delimiter);
+    if (line == NULL) {
+        ret = C_KZG_BADARGS;
+        goto out;
+    }
+    num_matches = sscanf(line, "%" SCNu64, &i);
+    if (num_matches != 1 || i != TRUSTED_SETUP_NUM_G1_POINTS) {
+        ret = C_KZG_BADARGS;
+        goto out;
+    }
 
     /* Read the number of g2 points */
-    num_matches = fscanf(in, "%" SCNu64, &i);
-    CHECK(num_matches == 1);
-    CHECK(i == TRUSTED_SETUP_NUM_G2_POINTS);
+    line = strtok(NULL, delimiter);
+    if (line == NULL) {
+        ret = C_KZG_BADARGS;
+        goto out;
+    }
+    num_matches = sscanf(line, "%" SCNu64, &i);
+    if (num_matches != 1 || i != TRUSTED_SETUP_NUM_G2_POINTS) {
+        ret = C_KZG_BADARGS;
+        goto out;
+    }
+
+    size = TRUSTED_SETUP_NUM_G1_POINTS * BYTES_PER_G1;
+    ret = c_kzg_malloc((void **)&g1_bytes, size);
+    if (ret != C_KZG_OK) {
+        goto out;
+    }
+
+    size = TRUSTED_SETUP_NUM_G2_POINTS * BYTES_PER_G2;
+    ret = c_kzg_malloc((void **)&g2_bytes, size);
+    if (ret != C_KZG_OK) {
+        goto out;
+    }
 
     /* Read all of the g1 points, byte by byte */
-    for (i = 0; i < TRUSTED_SETUP_NUM_G1_POINTS * BYTES_PER_G1; i++) {
-        num_matches = fscanf(in, "%2hhx", &g1_bytes[i]);
-        CHECK(num_matches == 1);
+    uint8_t *ptr = NULL;
+    for (i = 0; i < TRUSTED_SETUP_NUM_G1_POINTS; i++) {
+        line = strtok(NULL, delimiter);
+        if (line == NULL) {
+            ret = C_KZG_BADARGS;
+            printf("a\n");
+            goto out;
+        }
+        ptr = g1_bytes + (i * BYTES_PER_G1);
+        ret = parse_hex_string(ptr, line, BYTES_PER_G1 * 2);
+        if (ret != C_KZG_OK) {
+            printf("b\n");
+            goto out;
+        }
     }
 
     /* Read all of the g2 points, byte by byte */
-    for (i = 0; i < TRUSTED_SETUP_NUM_G2_POINTS * BYTES_PER_G2; i++) {
-        num_matches = fscanf(in, "%2hhx", &g2_bytes[i]);
-        CHECK(num_matches == 1);
+    for (i = 0; i < TRUSTED_SETUP_NUM_G2_POINTS; i++) {
+        line = strtok(NULL, delimiter);
+        if (line == NULL) {
+            ret = C_KZG_BADARGS;
+            goto out;
+        }
+        ptr = g2_bytes + (i * BYTES_PER_G2);
+        ret = parse_hex_string(ptr, line, BYTES_PER_G2 * 2);
+        if (ret != C_KZG_OK) {
+            goto out;
+        }
     }
 
-    return LOAD_TRUSTED_SETUP(
+#if 1
+    ret = LOAD_TRUSTED_SETUP(
         out,
         g1_bytes,
         TRUSTED_SETUP_NUM_G1_POINTS,
         g2_bytes,
         TRUSTED_SETUP_NUM_G2_POINTS
     );
+#endif
+
+out:
+    c_kzg_free(g1_bytes);
+    c_kzg_free(g2_bytes);
+    return ret;
 }
