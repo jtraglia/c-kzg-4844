@@ -131,9 +131,11 @@ typedef struct {
 /**
  * A basic blob data.
  */
-typedef struct {
-    uint8_t bytes[BYTES_PER_BLOB];
-} Blob;
+//typedef struct {
+//    size_t size;
+//    uint8_t *bytes;
+//} Blob;
+typedef uint8_t Blob;
 
 /**
  * A trusted (valid) KZG commitment.
@@ -160,6 +162,7 @@ typedef enum {
  */
 typedef struct {
     uint64_t poly_degree;
+    size_t bytes_per_blob;
     /** The length of `roots_of_unity`, a power of 2. */
     uint64_t max_width;
     /** Powers of the primitive root of unity determined by
