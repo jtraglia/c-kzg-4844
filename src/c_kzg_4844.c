@@ -75,9 +75,6 @@ static const char *RANDOM_CHALLENGE_KZG_BATCH_DOMAIN = "RCKZGBATCH___V1_";
 /** The number of bytes in a g2 point. */
 #define BYTES_PER_G2 96
 
-/** The number of g2 points in a trusted setup. */
-#define TRUSTED_SETUP_NUM_G2_POINTS 65
-
 // clang-format off
 
 /** Deserialized form of the G1 identity/infinity point. */
@@ -227,12 +224,21 @@ static C_KZG_RET new_fr_array(fr_t **x, size_t n) {
 }
 
 /**
+ * Initialize a polynomial (allocate space for it).
+ *
+ * @remark Free the space later using free_poly().
+ *
+ * @param[out] poly Pointer to the uninitialized polynomial.
+ * @param[in]  s    The trusted setup
  */
 static C_KZG_RET init_poly(Polynomial *poly, const KZGSettings *s) {
     return new_fr_array(&poly->evals, s->poly_degree);
 }
 
 /**
+ * Free a polynomial by freeing it's evaluations.
+ *
+ * @param[out] poly Pointer to an initialized polynomial.
  */
 static void free_poly(Polynomial *poly) {
     c_kzg_free(poly->evals);
@@ -1676,6 +1682,8 @@ out:
  */
 void FREE_TRUSTED_SETUP(KZGSettings *s) {
     if (s == NULL) return;
+    s->poly_degree = 0;
+    s->bytes_per_blob = 0;
     s->max_width = 0;
     c_kzg_free(s->roots_of_unity);
     c_kzg_free(s->g1_values);
@@ -1729,28 +1737,17 @@ C_KZG_RET LOAD_TRUSTED_SETUP(
 ) {
     C_KZG_RET ret;
 
-    out->bytes_per_blob = 0;
-    out->poly_degree = 0;
-    out->max_width = 0;
-    out->roots_of_unity = NULL;
-    out->g1_values = NULL;
-    out->g2_values = NULL;
-
-    /* Sanity check in case this is called directly */
-    // CHECK(n1 == TRUSTED_SETUP_NUM_G1_POINTS);
-    // CHECK(n2 == TRUSTED_SETUP_NUM_G2_POINTS);
-
-    out->poly_degree = n1;
-    out->bytes_per_blob = n1 * BYTES_PER_FIELD_ELEMENT;
-    ;
-
     /* 1<<max_scale is the smallest power of 2 >= n1 */
     uint32_t max_scale = 0;
     while ((1ULL << max_scale) < n1)
         max_scale++;
 
-    /* Set the max_width */
+    out->poly_degree = n1;
+    out->bytes_per_blob = n1 * BYTES_PER_FIELD_ELEMENT;
     out->max_width = 1ULL << max_scale;
+    out->roots_of_unity = NULL;
+    out->g1_values = NULL;
+    out->g2_values = NULL;
 
     /* Allocate all of our arrays */
     ret = new_fr_array(&out->roots_of_unity, out->max_width);
@@ -1825,8 +1822,6 @@ out_success:
 C_KZG_RET LOAD_TRUSTED_SETUP_FILE(KZGSettings *out, FILE *in) {
     C_KZG_RET ret;
     int num_matches;
-    uint64_t i;
-
     size_t size;
     uint8_t *g1_bytes = NULL;
     uint8_t *g2_bytes = NULL;
@@ -1834,39 +1829,53 @@ C_KZG_RET LOAD_TRUSTED_SETUP_FILE(KZGSettings *out, FILE *in) {
     /* Read the number of g1 points */
     uint64_t num_g1_points;
     num_matches = fscanf(in, "%" SCNu64, &num_g1_points);
-    CHECK(num_matches == 1);
+    if (num_matches != 1) {
+        ret = C_KZG_BADARGS;
+        goto out;
+    }
 
     /* Read the number of g2 points */
-    num_matches = fscanf(in, "%" SCNu64, &i);
-    CHECK(num_matches == 1);
-    CHECK(i == TRUSTED_SETUP_NUM_G2_POINTS);
+    uint64_t num_g2_points;
+    num_matches = fscanf(in, "%" SCNu64, &num_g2_points);
+    if (num_matches != 1) {
+        ret = C_KZG_BADARGS;
+        goto out;
+    }
 
+    /* Allocate space for the g1 bytes */
     size = num_g1_points * BYTES_PER_G1;
     ret = c_kzg_malloc((void **)&g1_bytes, size);
     if (ret != C_KZG_OK) {
         goto out;
     }
 
-    size = TRUSTED_SETUP_NUM_G2_POINTS * BYTES_PER_G2;
+    /* Allocate space for the g2 bytes */
+    size = num_g2_points * BYTES_PER_G2;
     ret = c_kzg_malloc((void **)&g2_bytes, size);
     if (ret != C_KZG_OK) {
         goto out;
     }
 
     /* Read all of the g1 points, byte by byte */
-    for (i = 0; i < num_g1_points * BYTES_PER_G1; i++) {
+    for (uint64_t i = 0; i < num_g1_points * BYTES_PER_G1; i++) {
         num_matches = fscanf(in, "%2hhx", &g1_bytes[i]);
-        CHECK(num_matches == 1);
+        if (num_matches != 1) {
+            ret = C_KZG_BADARGS;
+            goto out;
+        }
     }
 
     /* Read all of the g2 points, byte by byte */
-    for (i = 0; i < TRUSTED_SETUP_NUM_G2_POINTS * BYTES_PER_G2; i++) {
+    for (uint64_t i = 0; i < num_g2_points * BYTES_PER_G2; i++) {
         num_matches = fscanf(in, "%2hhx", &g2_bytes[i]);
-        CHECK(num_matches == 1);
+        if (num_matches != 1) {
+            ret = C_KZG_BADARGS;
+            goto out;
+        }
     }
 
     ret = LOAD_TRUSTED_SETUP(
-        out, g1_bytes, num_g1_points, g2_bytes, TRUSTED_SETUP_NUM_G2_POINTS
+        out, g1_bytes, num_g1_points, g2_bytes, num_g2_points
     );
 
 out:

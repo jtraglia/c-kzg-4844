@@ -2,9 +2,6 @@ package ckzg4844
 
 // #cgo CFLAGS: -I${SRCDIR}/../../src
 // #cgo CFLAGS: -I${SRCDIR}/blst_headers
-// #ifndef FIELD_ELEMENTS_PER_BLOB
-// #define FIELD_ELEMENTS_PER_BLOB 4096
-// #endif
 // #include "c_kzg_4844.c"
 import "C"
 
@@ -212,7 +209,7 @@ BlobToKZGCommitment is the binding for:
 
 	C_KZG_RET blob_to_kzg_commitment(
 	    KZGCommitment *out,
-	    const Blob *blob,
+	    const uint8_t *blob,
 	    const KZGSettings *s);
 */
 func BlobToKZGCommitment(blob Blob) (KZGCommitment, error) {
@@ -233,7 +230,7 @@ ComputeKZGProof is the binding for:
 	C_KZG_RET compute_kzg_proof(
 	    KZGProof *proof_out,
 	    Bytes32 *y_out,
-	    const Blob *blob,
+	    const uint8_t *blob,
 	    const Bytes32 *z_bytes,
 	    const KZGSettings *s);
 */
@@ -257,7 +254,7 @@ ComputeBlobKZGProof is the binding for:
 
 	C_KZG_RET compute_blob_kzg_proof(
 	    KZGProof *out,
-	    const Blob *blob,
+	    const uint8_t *blob,
 	    const Bytes48 *commitment_bytes,
 	    const KZGSettings *s);
 */
@@ -305,7 +302,7 @@ VerifyBlobKZGProof is the binding for:
 
 	C_KZG_RET verify_blob_kzg_proof(
 	    bool *out,
-	    const Blob *blob,
+	    const uint8_t *blob,
 	    const Bytes48 *commitment_bytes,
 	    const Bytes48 *proof_bytes,
 	    const KZGSettings *s);
@@ -329,7 +326,7 @@ VerifyBlobKZGProofBatch is the binding for:
 
 	C_KZG_RET verify_blob_kzg_proof_batch(
 	    bool *out,
-	    const Blob *blobs,
+	    const uint8_t *blobs,
 	    const Bytes48 *commitments_bytes,
 	    const Bytes48 *proofs_bytes,
 	    const KZGSettings *s);
