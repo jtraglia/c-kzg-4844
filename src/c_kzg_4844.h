@@ -131,10 +131,10 @@ typedef struct {
 /**
  * A basic blob data.
  */
-//typedef struct {
-//    size_t size;
-//    uint8_t *bytes;
-//} Blob;
+// typedef struct {
+//     size_t size;
+//     uint8_t *bytes;
+// } Blob;
 typedef uint8_t Blob;
 
 /**

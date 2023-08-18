@@ -1600,7 +1600,9 @@ static void test_verify_kzg_proof_batch__succeeds_round_trip(void) {
     /* Some preparation */
     for (int i = 0; i < n_samples; i++) {
         get_rand_blob(&blobs[i * s.bytes_per_blob]);
-        ret = blob_to_kzg_commitment(&commitments[i], &blobs[i * s.bytes_per_blob], &s);
+        ret = blob_to_kzg_commitment(
+            &commitments[i], &blobs[i * s.bytes_per_blob], &s
+        );
         ASSERT_EQUALS(ret, C_KZG_OK);
         ret = compute_blob_kzg_proof(
             &proofs[i], &blobs[i * s.bytes_per_blob], &commitments[i], &s
@@ -1637,7 +1639,9 @@ static void test_verify_kzg_proof_batch__fails_with_incorrect_proof(void) {
     /* Some preparation */
     for (int i = 0; i < n_samples; i++) {
         get_rand_blob(&blobs[i * s.bytes_per_blob]);
-        ret = blob_to_kzg_commitment(&commitments[i], &blobs[i * s.bytes_per_blob], &s);
+        ret = blob_to_kzg_commitment(
+            &commitments[i], &blobs[i * s.bytes_per_blob], &s
+        );
         ASSERT_EQUALS(ret, C_KZG_OK);
         ret = compute_blob_kzg_proof(
             &proofs[i], &blobs[i * s.bytes_per_blob], &commitments[i], &s
@@ -1670,7 +1674,9 @@ static void test_verify_kzg_proof_batch__fails_proof_not_in_g1(void) {
     /* Some preparation */
     for (int i = 0; i < n_samples; i++) {
         get_rand_blob(&blobs[i * s.bytes_per_blob]);
-        ret = blob_to_kzg_commitment(&commitments[i], &blobs[i * s.bytes_per_blob], &s);
+        ret = blob_to_kzg_commitment(
+            &commitments[i], &blobs[i * s.bytes_per_blob], &s
+        );
         ASSERT_EQUALS(ret, C_KZG_OK);
         ret = compute_blob_kzg_proof(
             &proofs[i], &blobs[i * s.bytes_per_blob], &commitments[i], &s
@@ -1706,7 +1712,9 @@ static void test_verify_kzg_proof_batch__fails_commitment_not_in_g1(void) {
     /* Some preparation */
     for (int i = 0; i < n_samples; i++) {
         get_rand_blob(&blobs[i * s.bytes_per_blob]);
-        ret = blob_to_kzg_commitment(&commitments[i], &blobs[i * s.bytes_per_blob], &s);
+        ret = blob_to_kzg_commitment(
+            &commitments[i], &blobs[i * s.bytes_per_blob], &s
+        );
         ASSERT_EQUALS(ret, C_KZG_OK);
         ret = compute_blob_kzg_proof(
             &proofs[i], &blobs[i * s.bytes_per_blob], &commitments[i], &s
@@ -1743,7 +1751,9 @@ static void test_verify_kzg_proof_batch__fails_invalid_blob(void) {
     /* Some preparation */
     for (int i = 0; i < n_samples; i++) {
         get_rand_blob(&blobs[i * s.bytes_per_blob]);
-        ret = blob_to_kzg_commitment(&commitments[i], &blobs[i * s.bytes_per_blob], &s);
+        ret = blob_to_kzg_commitment(
+            &commitments[i], &blobs[i * s.bytes_per_blob], &s
+        );
         ASSERT_EQUALS(ret, C_KZG_OK);
         ret = compute_blob_kzg_proof(
             &proofs[i], &blobs[i * s.bytes_per_blob], &commitments[i], &s
@@ -1756,7 +1766,11 @@ static void test_verify_kzg_proof_batch__fails_invalid_blob(void) {
         &field_element,
         "73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001"
     );
-    memcpy(&blobs[1 * s.bytes_per_blob], field_element.bytes, BYTES_PER_FIELD_ELEMENT);
+    memcpy(
+        &blobs[1 * s.bytes_per_blob],
+        field_element.bytes,
+        BYTES_PER_FIELD_ELEMENT
+    );
 
     ret = verify_blob_kzg_proof_batch(
         &ok, blobs, commitments, proofs, n_samples, &s

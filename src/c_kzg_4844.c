@@ -604,7 +604,9 @@ static C_KZG_RET bytes_to_kzg_proof(g1_t *out, const Bytes48 *b) {
  * @param[in]  blob The blob (an array of bytes)
  * @param[in]  s    The trusted setup
  */
-static C_KZG_RET blob_to_polynomial(Polynomial *p, const Blob *blob, const KZGSettings *s) {
+static C_KZG_RET blob_to_polynomial(
+    Polynomial *p, const Blob *blob, const KZGSettings *s
+) {
     C_KZG_RET ret;
 
     init_poly(p, s);
@@ -629,15 +631,20 @@ static C_KZG_RET blob_to_polynomial(Polynomial *p, const Blob *blob, const KZGSe
  * @param[in]  s                  The trusted setup
  */
 static C_KZG_RET compute_challenge(
-    fr_t *eval_challenge_out, const Blob *blob, const g1_t *commitment, const KZGSettings *s
+    fr_t *eval_challenge_out,
+    const Blob *blob,
+    const g1_t *commitment,
+    const KZGSettings *s
 ) {
     C_KZG_RET ret;
     Bytes32 eval_challenge;
     uint8_t *bytes = NULL;
 
     /* Input size to the Fiat-Shamir challenge computation. */
-    size_t challenge_input_size = DOMAIN_STR_LENGTH + 16 + (BYTES_PER_FIELD_ELEMENT * s->poly_degree) + BYTES_PER_COMMITMENT;
-    ret = c_kzg_malloc((void**)&bytes, challenge_input_size);
+    size_t challenge_input_size = DOMAIN_STR_LENGTH + 16 +
+                                  (BYTES_PER_FIELD_ELEMENT * s->poly_degree) +
+                                  BYTES_PER_COMMITMENT;
+    ret = c_kzg_malloc((void **)&bytes, challenge_input_size);
     if (ret != C_KZG_OK) goto out;
 
     /* Pointer tracking `bytes` for writing on top of it */
@@ -669,7 +676,7 @@ static C_KZG_RET compute_challenge(
     blst_sha256(eval_challenge.bytes, bytes, challenge_input_size);
     hash_to_bls_field(eval_challenge_out, &eval_challenge);
 
-    out:
+out:
     c_kzg_free(bytes);
     return ret;
 }
@@ -865,9 +872,7 @@ out:
 static C_KZG_RET poly_to_kzg_commitment(
     g1_t *out, const Polynomial *p, const KZGSettings *s
 ) {
-    return g1_lincomb_fast(
-        out, s->g1_values, p->evals, s->poly_degree
-    );
+    return g1_lincomb_fast(out, s->g1_values, p->evals, s->poly_degree);
 }
 
 /**
@@ -1108,9 +1113,7 @@ static C_KZG_RET compute_kzg_proof_impl(
     }
 
     g1_t out_g1;
-    ret = g1_lincomb_fast(
-        &out_g1, s->g1_values, q.evals, s->poly_degree
-    );
+    ret = g1_lincomb_fast(&out_g1, s->g1_values, q.evals, s->poly_degree);
     if (ret != C_KZG_OK) goto out;
 
     bytes_from_g1(proof_out, &out_g1);
@@ -1443,7 +1446,10 @@ C_KZG_RET VERIFY_BLOB_KZG_PROOF_BATCH(
         if (ret != C_KZG_OK) goto out;
 
         ret = compute_challenge(
-            &evaluation_challenges_fr[i], &blobs[i * s->bytes_per_blob], &commitments_g1[i], s
+            &evaluation_challenges_fr[i],
+            &blobs[i * s->bytes_per_blob],
+            &commitments_g1[i],
+            s
         );
         if (ret != C_KZG_OK) goto out;
 
@@ -1713,11 +1719,12 @@ C_KZG_RET LOAD_TRUSTED_SETUP(
     out->g2_values = NULL;
 
     /* Sanity check in case this is called directly */
-    //CHECK(n1 == TRUSTED_SETUP_NUM_G1_POINTS);
-    //CHECK(n2 == TRUSTED_SETUP_NUM_G2_POINTS);
+    // CHECK(n1 == TRUSTED_SETUP_NUM_G1_POINTS);
+    // CHECK(n2 == TRUSTED_SETUP_NUM_G2_POINTS);
 
     out->poly_degree = n1;
-    out->bytes_per_blob = n1 * BYTES_PER_FIELD_ELEMENT;;
+    out->bytes_per_blob = n1 * BYTES_PER_FIELD_ELEMENT;
+    ;
 
     /* 1<<max_scale is the smallest power of 2 >= n1 */
     uint32_t max_scale = 0;
@@ -1841,11 +1848,7 @@ C_KZG_RET LOAD_TRUSTED_SETUP_FILE(KZGSettings *out, FILE *in) {
     }
 
     ret = LOAD_TRUSTED_SETUP(
-        out,
-        g1_bytes,
-        num_g1_points,
-        g2_bytes,
-        TRUSTED_SETUP_NUM_G2_POINTS
+        out, g1_bytes, num_g1_points, g2_bytes, TRUSTED_SETUP_NUM_G2_POINTS
     );
 
 out:
