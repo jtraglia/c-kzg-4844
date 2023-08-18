@@ -597,7 +597,7 @@ static C_KZG_RET bytes_to_kzg_proof(g1_t *out, const Bytes48 *b) {
 }
 
 /**
- * Deserialize a Blob (array of bytes) into a Polynomial (array of field
+ * Deserialize a uint8_t (array of bytes) into a Polynomial (array of field
  * elements).
  *
  * @param[out] p    The output polynomial (array of field elements)
@@ -605,7 +605,7 @@ static C_KZG_RET bytes_to_kzg_proof(g1_t *out, const Bytes48 *b) {
  * @param[in]  s    The trusted setup
  */
 static C_KZG_RET blob_to_polynomial(
-    Polynomial *p, const Blob *blob, const KZGSettings *s
+    Polynomial *p, const uint8_t *blob, const KZGSettings *s
 ) {
     C_KZG_RET ret;
 
@@ -632,7 +632,7 @@ static C_KZG_RET blob_to_polynomial(
  */
 static C_KZG_RET compute_challenge(
     fr_t *eval_challenge_out,
-    const Blob *blob,
+    const uint8_t *blob,
     const g1_t *commitment,
     const KZGSettings *s
 ) {
@@ -883,7 +883,7 @@ static C_KZG_RET poly_to_kzg_commitment(
  * @param[in]  s    The trusted setup
  */
 C_KZG_RET BLOB_TO_KZG_COMMITMENT(
-    KZGCommitment *out, const Blob *blob, const KZGSettings *s
+    KZGCommitment *out, const uint8_t *blob, const KZGSettings *s
 ) {
     C_KZG_RET ret;
     Polynomial p;
@@ -1010,7 +1010,7 @@ static C_KZG_RET compute_kzg_proof_impl(
 C_KZG_RET COMPUTE_KZG_PROOF(
     KZGProof *proof_out,
     Bytes32 *y_out,
-    const Blob *blob,
+    const uint8_t *blob,
     const Bytes32 *z_bytes,
     const KZGSettings *s
 ) {
@@ -1136,7 +1136,7 @@ out:
  */
 C_KZG_RET COMPUTE_BLOB_KZG_PROOF(
     KZGProof *out,
-    const Blob *blob,
+    const uint8_t *blob,
     const Bytes48 *commitment_bytes,
     const KZGSettings *s
 ) {
@@ -1172,14 +1172,14 @@ out:
  * commitment.
  *
  * @param[out] ok               True if the proofs are valid, otherwise false
- * @param[in]  blob             Blob to verify
+ * @param[in]  blob             uint8_t to verify
  * @param[in]  commitment_bytes Commitment to verify
  * @param[in]  proof_bytes      Proof used for verification
  * @param[in]  s                The trusted setup
  */
 C_KZG_RET VERIFY_BLOB_KZG_PROOF(
     bool *ok,
-    const Blob *blob,
+    const uint8_t *blob,
     const Bytes48 *commitment_bytes,
     const Bytes48 *proof_bytes,
     const KZGSettings *s
@@ -1396,7 +1396,7 @@ out:
  */
 C_KZG_RET VERIFY_BLOB_KZG_PROOF_BATCH(
     bool *ok,
-    const Blob *blobs,
+    const uint8_t *blobs,
     const Bytes48 *commitments_bytes,
     const Bytes48 *proofs_bytes,
     size_t n,

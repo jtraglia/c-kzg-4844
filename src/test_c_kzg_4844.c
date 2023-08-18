@@ -64,7 +64,7 @@ static void get_rand_fr(fr_t *out) {
     hash_to_bls_field(out, &tmp_bytes);
 }
 
-static void get_rand_blob(Blob *out) {
+static void get_rand_blob(uint8_t *out) {
     for (int i = 0; i < FIELD_ELEMENTS_PER_BLOB; i++) {
         get_rand_field_element((Bytes32 *)&out[i * 32]);
     }
@@ -72,7 +72,7 @@ static void get_rand_blob(Blob *out) {
 
 static void get_rand_g1_bytes(Bytes48 *out) {
     C_KZG_RET ret;
-    Blob *blob = NULL;
+    uint8_t *blob = NULL;
 
     ret = c_kzg_malloc((void **)&blob, s.bytes_per_blob);
     ASSERT_EQUALS(ret, C_KZG_OK);
@@ -425,7 +425,7 @@ static void test_pairings_verify__bad_pairing(void) {
 static void test_blob_to_kzg_commitment__succeeds_x_less_than_modulus(void) {
     C_KZG_RET ret;
     KZGCommitment c;
-    Blob *blob = NULL;
+    uint8_t *blob = NULL;
     Bytes32 field_element;
 
     ret = c_kzg_malloc((void **)&blob, s.bytes_per_blob);
@@ -451,7 +451,7 @@ static void test_blob_to_kzg_commitment__succeeds_x_less_than_modulus(void) {
 static void test_blob_to_kzg_commitment__fails_x_equal_to_modulus(void) {
     C_KZG_RET ret;
     KZGCommitment c;
-    Blob *blob = NULL;
+    uint8_t *blob = NULL;
     Bytes32 field_element;
 
     ret = c_kzg_malloc((void **)&blob, s.bytes_per_blob);
@@ -477,7 +477,7 @@ static void test_blob_to_kzg_commitment__fails_x_equal_to_modulus(void) {
 static void test_blob_to_kzg_commitment__fails_x_greater_than_modulus(void) {
     C_KZG_RET ret;
     KZGCommitment c;
-    Blob *blob = NULL;
+    uint8_t *blob = NULL;
     Bytes32 field_element;
 
     ret = c_kzg_malloc((void **)&blob, s.bytes_per_blob);
@@ -503,7 +503,7 @@ static void test_blob_to_kzg_commitment__fails_x_greater_than_modulus(void) {
 static void test_blob_to_kzg_commitment__succeeds_point_at_infinity(void) {
     C_KZG_RET ret;
     KZGCommitment c;
-    Blob *blob = NULL;
+    uint8_t *blob = NULL;
     Bytes48 point_at_infinity;
     int diff;
 
@@ -528,7 +528,7 @@ static void test_blob_to_kzg_commitment__succeeds_point_at_infinity(void) {
 static void test_blob_to_kzg_commitment__succeeds_expected_commitment(void) {
     C_KZG_RET ret;
     KZGCommitment c;
-    Blob *blob = NULL;
+    uint8_t *blob = NULL;
     Bytes32 field_element;
     Bytes48 expected_commitment;
     int diff;
@@ -1115,7 +1115,7 @@ static void test_is_power_of_two__fails_not_powers_of_two(void) {
 
 static void test_compute_kzg_proof__succeeds_expected_proof(void) {
     C_KZG_RET ret;
-    Blob *blob = NULL;
+    uint8_t *blob = NULL;
     Polynomial poly;
     init_poly(&poly, &s);
     fr_t y_fr, z_fr;
@@ -1182,7 +1182,7 @@ static void test_compute_and_verify_kzg_proof__succeeds_round_trip(void) {
     Bytes48 proof;
     Bytes32 z, y, computed_y;
     KZGCommitment c;
-    Blob *blob = NULL;
+    uint8_t *blob = NULL;
     Polynomial poly;
     init_poly(&poly, &s);
     fr_t y_fr, z_fr;
@@ -1234,7 +1234,7 @@ static void test_compute_and_verify_kzg_proof__succeeds_round_trip(void) {
 static void test_compute_and_verify_kzg_proof__succeeds_within_domain(void) {
     for (int i = 0; i < 25; i++) {
         C_KZG_RET ret;
-        Blob *blob = NULL;
+        uint8_t *blob = NULL;
         KZGCommitment c;
         Polynomial poly;
         init_poly(&poly, &s);
@@ -1288,7 +1288,7 @@ static void test_compute_and_verify_kzg_proof__fails_incorrect_proof(void) {
     g1_t proof_g1;
     Bytes32 z, y, computed_y;
     KZGCommitment c;
-    Blob *blob = NULL;
+    uint8_t *blob = NULL;
     Polynomial poly;
     init_poly(&poly, &s);
     fr_t y_fr, z_fr;
@@ -1426,7 +1426,7 @@ static void test_compute_and_verify_blob_kzg_proof__succeeds_round_trip(void) {
     C_KZG_RET ret;
     Bytes48 proof;
     KZGCommitment c;
-    Blob *blob = NULL;
+    uint8_t *blob = NULL;
 
     ret = c_kzg_malloc((void **)&blob, s.bytes_per_blob);
     ASSERT_EQUALS(ret, C_KZG_OK);
@@ -1454,7 +1454,7 @@ static void test_compute_and_verify_blob_kzg_proof__fails_incorrect_proof(void
     Bytes48 proof;
     g1_t proof_g1;
     KZGCommitment c;
-    Blob *blob = NULL;
+    uint8_t *blob = NULL;
     bool ok;
 
     ret = c_kzg_malloc((void **)&blob, s.bytes_per_blob);
@@ -1486,7 +1486,7 @@ static void test_compute_and_verify_blob_kzg_proof__fails_proof_not_in_g1(void
     C_KZG_RET ret;
     Bytes48 proof;
     KZGCommitment c;
-    Blob *blob = NULL;
+    uint8_t *blob = NULL;
     bool ok;
 
     ret = c_kzg_malloc((void **)&blob, s.bytes_per_blob);
@@ -1512,7 +1512,7 @@ test_compute_and_verify_blob_kzg_proof__fails_compute_commitment_not_in_g1(void
     C_KZG_RET ret;
     Bytes48 proof;
     KZGCommitment c;
-    Blob *blob = NULL;
+    uint8_t *blob = NULL;
 
     ret = c_kzg_malloc((void **)&blob, s.bytes_per_blob);
     ASSERT_EQUALS(ret, C_KZG_OK);
@@ -1536,7 +1536,7 @@ test_compute_and_verify_blob_kzg_proof__fails_verify_commitment_not_in_g1(void
     C_KZG_RET ret;
     Bytes48 proof;
     KZGCommitment c;
-    Blob *blob = NULL;
+    uint8_t *blob = NULL;
     bool ok;
 
     ret = c_kzg_malloc((void **)&blob, s.bytes_per_blob);
@@ -1561,7 +1561,7 @@ static void test_compute_and_verify_blob_kzg_proof__fails_invalid_blob(void) {
     Bytes48 proof;
     Bytes32 field_element;
     KZGCommitment c;
-    Blob *blob = NULL;
+    uint8_t *blob = NULL;
     bool ok;
 
     ret = c_kzg_malloc((void **)&blob, s.bytes_per_blob);
@@ -1590,7 +1590,7 @@ static void test_verify_kzg_proof_batch__succeeds_round_trip(void) {
     const int n_samples = 16;
     Bytes48 proofs[n_samples];
     KZGCommitment commitments[n_samples];
-    Blob *blobs = NULL;
+    uint8_t *blobs = NULL;
     bool ok;
 
     /* Allocate blobs because they are big */
@@ -1629,7 +1629,7 @@ static void test_verify_kzg_proof_batch__fails_with_incorrect_proof(void) {
     const int n_samples = 2;
     Bytes48 proofs[n_samples];
     KZGCommitment commitments[n_samples];
-    Blob *blobs = NULL;
+    uint8_t *blobs = NULL;
     bool ok;
 
     /* Allocate blobs because they are big */
@@ -1664,7 +1664,7 @@ static void test_verify_kzg_proof_batch__fails_proof_not_in_g1(void) {
     const int n_samples = 2;
     Bytes48 proofs[n_samples];
     KZGCommitment commitments[n_samples];
-    Blob *blobs = NULL;
+    uint8_t *blobs = NULL;
     bool ok;
 
     /* Allocate blobs because they are big */
@@ -1702,7 +1702,7 @@ static void test_verify_kzg_proof_batch__fails_commitment_not_in_g1(void) {
     const int n_samples = 2;
     Bytes48 proofs[n_samples];
     KZGCommitment commitments[n_samples];
-    Blob *blobs = NULL;
+    uint8_t *blobs = NULL;
     bool ok;
 
     /* Allocate blobs because they are big */
@@ -1741,7 +1741,7 @@ static void test_verify_kzg_proof_batch__fails_invalid_blob(void) {
     Bytes48 proofs[n_samples];
     KZGCommitment commitments[n_samples];
     Bytes32 field_element;
-    Blob *blobs = NULL;
+    uint8_t *blobs = NULL;
     bool ok;
 
     /* Allocate blobs because they are big */
@@ -1818,7 +1818,7 @@ static void test_expand_root_of_unity__fails_wrong_root_of_unity(void) {
 
 #ifdef PROFILE
 static void profile_blob_to_kzg_commitment(void) {
-    Blob *blob = NULL;
+    uint8_t *blob = NULL;
     KZGCommitment c;
 
     ret = c_kzg_malloc((void **)&blob, s.bytes_per_blob);
@@ -1834,7 +1834,7 @@ static void profile_blob_to_kzg_commitment(void) {
 }
 
 static void profile_compute_kzg_proof(void) {
-    Blob *blob = NULL;
+    uint8_t *blob = NULL;
     Bytes32 z, y_out;
     KZGProof proof_out;
 
@@ -1852,7 +1852,7 @@ static void profile_compute_kzg_proof(void) {
 }
 
 static void profile_compute_blob_kzg_proof(void) {
-    Blob *blob = NULL;
+    uint8_t *blob = NULL;
     Bytes48 commitment;
     KZGProof out;
 
@@ -1887,7 +1887,7 @@ static void profile_verify_kzg_proof(void) {
 }
 
 static void profile_verify_blob_kzg_proof(void) {
-    Blob *blob = NULL;
+    uint8_t *blob = NULL;
     Bytes48 commitment, proof;
     bool out;
 
@@ -1907,7 +1907,7 @@ static void profile_verify_blob_kzg_proof(void) {
 
 static void profile_verify_blob_kzg_proof_batch(void) {
     const int n = 16;
-    Blob *blobs = NULL;
+    uint8_t *blobs = NULL;
     Bytes48 commitments[n];
     Bytes48 proofs[n];
     bool out;
