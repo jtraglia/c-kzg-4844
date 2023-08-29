@@ -1726,6 +1726,342 @@ static void test_expand_root_of_unity__fails_wrong_root_of_unity(void) {
     ASSERT_EQUALS(ret, C_KZG_BADARGS);
 }
 
+static void test_sample__simple_blob(void) {
+    C_KZG_RET ret;
+
+    Blob blob;
+    memset(&blob, 0, sizeof(Blob));
+    {
+        fr_t one, two, three;
+        fr_from_uint64(&one, 1);
+        fr_from_uint64(&two, 2);
+        fr_from_uint64(&three, 3);
+
+        Bytes32 *field = (Bytes32 *)blob.bytes;
+        //bytes_from_bls_field(field + 2, &three);
+        //bytes_from_bls_field(field + 1, &two);
+        bytes_from_bls_field(field + 0, &one);
+    }
+
+    for (size_t i = 0; i < 5; i++) {
+        printf("blob[%lu] = ", i);
+        for (size_t j = 0; j < 32; j++) {
+            Bytes32 *field = (Bytes32 *)&blob.bytes[i * BYTES_PER_FIELD_ELEMENT];
+            printf("%02x", field->bytes[j]);
+        }
+        printf("\n");
+    }
+
+    for (size_t i = 0; i < 5; i++) {
+        Bytes32 x, y;
+
+        fr_t tmp;
+        fr_from_uint64(&tmp, i);
+        bytes_from_bls_field(&x, &tmp);
+
+        ret = sample(&y, &blob, &x, &s);
+        ASSERT_EQUALS(ret, C_KZG_OK);
+
+        printf("\nx = ");
+        for (size_t k = 0; k < 32; k++) {
+            printf("%02x", x.bytes[k]);
+        }
+        printf("\n");
+
+        printf("y = ");
+        for (size_t k = 0; k < 32; k++) {
+            printf("%02x", y.bytes[k]);
+        }
+        printf("\n");
+
+//        int diff;
+//        diff = memcmp(y1.bytes, y2.bytes, sizeof(Bytes32));
+//        ASSERT_EQUALS(diff, 0);
+    }
+}
+
+static void test_multiply_polynomials__three_positive_binomials(void) {
+    C_KZG_RET ret;
+    Polynomial p1, p2, p3;
+    fr_t expected[5];
+
+    /* x + 2 */
+    fr_from_uint64(&p1.evals[0], 2);
+    fr_from_uint64(&p1.evals[1], 1);
+
+    /* x + 3 */
+    fr_from_uint64(&p2.evals[0], 3);
+    fr_from_uint64(&p2.evals[1], 1);
+
+    /* x + 4 */
+    fr_from_uint64(&p3.evals[0], 4);
+    fr_from_uint64(&p3.evals[1], 1);
+
+    /* Multiple them */
+    ret = multiply_polynomials(&p1, 2, &p2, 2);
+    ASSERT_EQUALS(ret, C_KZG_OK);
+    ret = multiply_polynomials(&p1, 3, &p3, 2);
+    ASSERT_EQUALS(ret, C_KZG_OK);
+
+    /* x^3 + 9x^2 + 26x + 24 */
+    fr_from_uint64(&expected[0], 24);
+    fr_from_uint64(&expected[1], 26);
+    fr_from_uint64(&expected[2], 9);
+    fr_from_uint64(&expected[3], 1);
+    fr_from_uint64(&expected[4], 0);
+
+    for (size_t i = 0; i < NUM_ELEMENTS(expected); i++) {
+        ASSERT_EQUALS(true, fr_equal(&expected[i], &p1.evals[i]));
+    }
+}
+
+static void test_multiply_polynomials__three_negative_binomials(void) {
+    C_KZG_RET ret;
+    Polynomial p1, p2, p3;
+    Bytes32 expected[5];
+    int diff;
+
+    /* x - 2 */
+    p1.evals[0] = FR_ZERO;
+    blst_fr_sub(&p1.evals[0], &p1.evals[0], &FR_ONE);
+    blst_fr_sub(&p1.evals[0], &p1.evals[0], &FR_ONE);
+    fr_from_uint64(&p1.evals[1], 1);
+
+    /* x - 3 */
+    p2.evals[0] = FR_ZERO;
+    blst_fr_sub(&p2.evals[0], &p2.evals[0], &FR_ONE);
+    blst_fr_sub(&p2.evals[0], &p2.evals[0], &FR_ONE);
+    blst_fr_sub(&p2.evals[0], &p2.evals[0], &FR_ONE);
+    fr_from_uint64(&p2.evals[1], 1);
+
+    /* x - 4 */
+    p3.evals[0] = FR_ZERO;
+    blst_fr_sub(&p3.evals[0], &p3.evals[0], &FR_ONE);
+    blst_fr_sub(&p3.evals[0], &p3.evals[0], &FR_ONE);
+    blst_fr_sub(&p3.evals[0], &p3.evals[0], &FR_ONE);
+    blst_fr_sub(&p3.evals[0], &p3.evals[0], &FR_ONE);
+    fr_from_uint64(&p3.evals[1], 1);
+
+    /* Multiple them */
+    ret = multiply_polynomials(&p1, 2, &p2, 2);
+    ASSERT_EQUALS(ret, C_KZG_OK);
+    ret = multiply_polynomials(&p1, 3, &p3, 2);
+    ASSERT_EQUALS(ret, C_KZG_OK);
+
+    /* x^3 - 9x^2 + 26x - 24 */
+    bytes32_from_hex(
+        &expected[0], /* -24 */
+        "73eda753299d7d483339d80809a1d80553bda402fffe5bfefffffffeffffffe9"
+    );
+    bytes32_from_hex(
+        &expected[1], /* +26 */
+        "000000000000000000000000000000000000000000000000000000000000001a"
+    );
+    bytes32_from_hex(
+        &expected[2], /* -9 */
+        "73eda753299d7d483339d80809a1d80553bda402fffe5bfefffffffefffffff8"
+    );
+    bytes32_from_hex(
+        &expected[3], /* +1 */
+        "0000000000000000000000000000000000000000000000000000000000000001"
+    );
+    bytes32_from_hex(
+        &expected[4],
+        "0000000000000000000000000000000000000000000000000000000000000000"
+    );
+
+    for (size_t i = 0; i < NUM_ELEMENTS(expected); i++) {
+        Bytes32 tmp;
+        bytes_from_bls_field(&tmp, &p1.evals[i]);
+        diff = memcmp(tmp.bytes, expected[i].bytes, sizeof(Bytes32));
+        ASSERT_EQUALS(diff, 0);
+    }
+}
+
+static void test_compute_lagrange_basis__three_samples(void) {
+    C_KZG_RET ret;
+    const size_t n = 3;
+    Polynomial polys[n];
+    fr_t xs[n];
+
+    fr_from_uint64(&xs[0], 1);
+    fr_from_uint64(&xs[1], 2);
+    fr_from_uint64(&xs[2], 4);
+
+    for (size_t i = 0; i < n; i++) {
+        ret = compute_lagrange_basis(&polys[i], xs, n, i);
+        ASSERT_EQUALS(ret, C_KZG_OK);
+    }
+
+    /* L0(x) = 1/3x^2 - 2x + 8/3 */
+    {
+        fr_t two, three, eight, neg_one;
+        fr_from_uint64(&two, 2);
+        fr_from_uint64(&three, 3);
+        fr_from_uint64(&eight, 8);
+        blst_fr_sub(&neg_one, &FR_ZERO, &FR_ONE);
+
+        fr_t one_third;
+        fr_div(&one_third, &FR_ONE, &three);
+        ASSERT_EQUALS(true, fr_equal(&one_third, &polys[0].evals[2]));
+
+        fr_t neg_two;
+        blst_fr_mul(&neg_two, &two, &neg_one);
+        ASSERT_EQUALS(true, fr_equal(&neg_two, &polys[0].evals[1]));
+
+        fr_t eight_third;
+        fr_div(&eight_third, &eight, &three);
+        ASSERT_EQUALS(true, fr_equal(&eight_third, &polys[0].evals[0]));
+    }
+
+    /* L1(x) = -1/2x^2 + 5/2x - 2 */
+    {
+        fr_t two, five, neg_one;
+        fr_from_uint64(&two, 2);
+        fr_from_uint64(&five, 5);
+        blst_fr_sub(&neg_one, &FR_ZERO, &FR_ONE);
+
+        fr_t neg_one_half;
+        fr_div(&neg_one_half, &neg_one, &two);
+        ASSERT_EQUALS(true, fr_equal(&neg_one_half, &polys[1].evals[2]));
+
+        fr_t five_half;
+        fr_div(&five_half, &five, &two);
+        ASSERT_EQUALS(true, fr_equal(&five_half, &polys[1].evals[1]));
+
+        fr_t neg_two;
+        blst_fr_mul(&neg_two, &two, &neg_one);
+        ASSERT_EQUALS(true, fr_equal(&neg_two, &polys[1].evals[0]));
+    }
+
+    /* L2(x) = 1/6x^2 - 1/2x + 1/3 */
+    {
+        fr_t two, three, six, neg_one;
+        fr_from_uint64(&two, 2);
+        fr_from_uint64(&three, 3);
+        fr_from_uint64(&six, 6);
+        blst_fr_sub(&neg_one, &FR_ZERO, &FR_ONE);
+
+        fr_t one_sixth;
+        fr_div(&one_sixth, &FR_ONE, &six);
+        ASSERT_EQUALS(true, fr_equal(&one_sixth, &polys[2].evals[2]));
+
+        fr_t neg_one_half;
+        fr_div(&neg_one_half, &neg_one, &two);
+        ASSERT_EQUALS(true, fr_equal(&neg_one_half, &polys[2].evals[1]));
+
+        fr_t one_third;
+        fr_div(&one_third, &FR_ONE, &three);
+        ASSERT_EQUALS(true, fr_equal(&one_third, &polys[2].evals[0]));
+    }
+}
+
+static void test_reconstruct__three_samples(void) {
+    C_KZG_RET ret;
+    const size_t n = 3;
+    fr_t xs[n], ys[n];
+    Bytes32 xs_bytes[n], ys_bytes[n];
+
+    /* (x0, y0) = (1, 3) */
+    fr_from_uint64(&xs[0], 1);
+    fr_from_uint64(&ys[0], 3);
+
+    /* (x1, y1) = (2, 7) */
+    fr_from_uint64(&xs[1], 2);
+    fr_from_uint64(&ys[1], 7);
+
+    /* (x2, y2) = (4, 11) */
+    fr_from_uint64(&xs[1], 4);
+    fr_from_uint64(&ys[1], 11);
+
+    /* Convert field elements to bytes */
+    for (size_t i = 0; i < n; i++) {
+        bytes_from_bls_field(&xs_bytes[i], &xs[i]);
+        bytes_from_bls_field(&ys_bytes[i], &ys[i]);
+    }
+
+    /* P0(x) = 3(1/3x^2 - 2x + 8/3) */
+    /* P0(x) = x^2 - 6x + 8 */
+
+    /* P1(x) = 7(-1/2x^2 + 5/2x - 2) */
+    /* P1(x) = -7/2x^2 + 35/2x - 14 */
+
+    /* P2(x) = 11(1/6x^2 - 1/2x + 1/3) */
+    /* P2(x) = 11/6x^2 - 11/2x + 11/3 */
+
+    /* P(x) = P0(x) + P1(x) + P2(x) */
+    /* P(x) = -2/3x^2 + 6x - 7/3 */
+
+    Blob blob;
+    memset(&blob, 0, sizeof(Blob));
+    {
+        fr_t two, three, six, seven, neg_one;
+        fr_from_uint64(&two, 2);
+        fr_from_uint64(&three, 3);
+        fr_from_uint64(&six, 6);
+        fr_from_uint64(&seven, 7);
+        blst_fr_sub(&neg_one, &FR_ZERO, &FR_ONE);
+
+        fr_t neg_two_third;
+        fr_div(&neg_two_third, &two, &three);
+        blst_fr_mul(&neg_two_third, &neg_two_third, &neg_one);
+
+        fr_t neg_seven_third;
+        fr_div(&neg_seven_third, &seven, &three);
+        blst_fr_mul(&neg_seven_third, &neg_seven_third, &neg_one);
+
+        Bytes32 *field = (Bytes32 *)blob.bytes;
+        bytes_from_bls_field(field + 2, &neg_two_third);
+        bytes_from_bls_field(field + 1, &six);
+        bytes_from_bls_field(field + 0, &neg_seven_third);
+    }
+
+    Blob reconstructed_blob;
+    ret = reconstruct(&reconstructed_blob, xs_bytes, ys_bytes, n, &s);
+    ASSERT_EQUALS(ret, C_KZG_OK);
+
+    #if 0
+    /* Check with more random inputs */
+    for (size_t i = 0; i < 64; i++) {
+        Bytes32 x, y1, y2;
+        #if 0
+        get_rand_field_element(&x);
+        #else
+        fr_t tmp;
+        fr_from_uint64(&tmp, i);
+        bytes_from_bls_field(&x, &tmp);
+        #endif
+        ret = sample(&y1, &blob, &x, &s);
+        ASSERT_EQUALS(ret, C_KZG_OK);
+        ret = sample(&y2, &reconstructed_blob, &x, &s);
+        ASSERT_EQUALS(ret, C_KZG_OK);
+        printf("i=%lu\n", i);
+
+        printf("x = ");
+        for (size_t k = 0; k < 32; k++) {
+            printf("%02x", x.bytes[k]);
+        }
+        printf("\n");
+
+        printf("y1 = ");
+        for (size_t k = 0; k < 32; k++) {
+            printf("%02x", y1.bytes[k]);
+        }
+        printf("\n");
+
+        printf("y2 = ");
+        for (size_t k = 0; k < 32; k++) {
+            printf("%02x", y2.bytes[k]);
+        }
+        printf("\n");
+
+        int diff;
+        diff = memcmp(y1.bytes, y2.bytes, sizeof(Bytes32));
+        ASSERT_EQUALS(diff, 0);
+    }
+    #endif
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Profiling Functions
 ///////////////////////////////////////////////////////////////////////////////
@@ -1936,6 +2272,11 @@ int main(void) {
     RUN(test_expand_root_of_unity__succeeds_with_root);
     RUN(test_expand_root_of_unity__fails_not_root_of_unity);
     RUN(test_expand_root_of_unity__fails_wrong_root_of_unity);
+    RUN(test_sample__simple_blob);
+    RUN(test_multiply_polynomials__three_positive_binomials);
+    RUN(test_multiply_polynomials__three_negative_binomials);
+    RUN(test_compute_lagrange_basis__three_samples);
+    RUN(test_reconstruct__three_samples);
 
     /*
      * These functions are only executed if we're profiling. To me, it makes

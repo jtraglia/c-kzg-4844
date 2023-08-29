@@ -1802,3 +1802,215 @@ C_KZG_RET LOAD_TRUSTED_SETUP_FILE(KZGSettings *out, FILE *in) {
         TRUSTED_SETUP_NUM_G2_POINTS
     );
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// Erasure Coding & Reconstruction
+///////////////////////////////////////////////////////////////////////////////
+
+/**
+ *
+ * @param[out] y_bytes The output y point
+ * @param[in]  blob    Blob representing polynomial
+ * @param[in]  x_bytes The input x point
+ * @param[in]  s       The trusted setup
+ */
+C_KZG_RET sample(
+    Bytes32 *y_bytes,
+    const Blob *blob,
+    const Bytes32 *x_bytes,
+    const KZGSettings *s
+) {
+    C_KZG_RET ret;
+    Polynomial poly;
+    fr_t x, y;
+
+    /* Convert input values to internal types */
+    ret = blob_to_polynomial(&poly, blob);
+    if (ret != C_KZG_OK) goto out;
+    ret = bytes_to_bls_field(&x, x_bytes);
+    if (ret != C_KZG_OK) goto out;
+
+    /* Evaluate the polynomial at x to get y */
+    ret = evaluate_polynomial_in_evaluation_form(&y, &poly, &x, s);
+    if (ret != C_KZG_OK) goto out;
+
+    /* Convert the result to bytes */
+    bytes_from_bls_field(y_bytes, &y);
+
+out:
+    return ret;
+}
+
+static C_KZG_RET multiply_polynomials(
+    Polynomial *p1, size_t p1_len, const Polynomial *p2, size_t p2_len
+) {
+    C_KZG_RET ret;
+    Polynomial p1_copy;
+
+    /* Check that the lengths are valid */
+    if (p1_len + p2_len >= FIELD_ELEMENTS_PER_BLOB) {
+        printf("greater than max\n");
+        ret = C_KZG_BADARGS;
+        goto out;
+    }
+
+    /* Make a copy of the result polynomial */
+    for (size_t i = 0; i < p1_len; i++) {
+        p1_copy.evals[i] = p1->evals[i];
+    }
+
+    /* Set all of coeffs in the result to zero */
+    for (size_t i = 0; i < FIELD_ELEMENTS_PER_BLOB; i++) {
+        p1->evals[i] = FR_ZERO;
+    }
+
+    /* Multiple each coefficient in the polynomials */
+    for (size_t i = 0; i < p1_len; i++) {
+        for (size_t j = 0; j < p2_len; j++) {
+            fr_t tmp;
+            blst_fr_mul(&tmp, &p1_copy.evals[i], &p2->evals[j]);
+            blst_fr_add(&p1->evals[i + j], &p1->evals[i + j], &tmp);
+        }
+    }
+
+    ret = C_KZG_OK;
+
+out:
+    return ret;
+}
+
+static C_KZG_RET compute_lagrange_basis(
+    Polynomial *result, const fr_t *xs, size_t n, size_t index
+) {
+    C_KZG_RET ret;
+
+    result->evals[0] = FR_ONE;
+    for (size_t i = 1; i < FIELD_ELEMENTS_PER_BLOB; i++) {
+        result->evals[i] = FR_ZERO;
+    }
+
+    (void) n;
+    for (size_t i = 0; i < n; i++) {
+        if (i == index) continue;
+
+//        Bytes32 tmp;
+//        bytes_from_bls_field(&tmp, &xs[i]);
+//        printf("xs[%lu] = ", i);
+//        for (size_t k = 0; k < 32; k++) {
+//            printf("%02x", tmp.bytes[k]);
+//        }
+//        printf("\n");
+
+        Polynomial binomial;
+        blst_fr_sub(&binomial.evals[0], &FR_ZERO, &xs[i]);
+        binomial.evals[1] = FR_ONE;
+
+        ret = multiply_polynomials(result, i + 2, &binomial, 2);
+        if (ret != C_KZG_OK) goto out;
+    }
+
+    #if 1
+    fr_t tmp, divisor = FR_ONE;
+    for (size_t i = 0; i < n; i++) {
+        if (i == index) continue;
+        blst_fr_sub(&tmp, &xs[index], &xs[i]);
+        blst_fr_mul(&divisor, &divisor, &tmp);
+    }
+
+    #if 0
+    Bytes32 blah;
+    bytes_from_bls_field(&blah, &divisor);
+    for (size_t k = 0; k < 32; k++) {
+        printf("%02x", blah.bytes[k]);
+    }
+    printf("\n");
+    #endif
+
+    for (size_t i = 0; i < FIELD_ELEMENTS_PER_BLOB; i++) {
+        fr_div(&result->evals[i], &result->evals[i], &divisor);
+    }
+    #endif
+
+out:
+    return ret;
+}
+
+/**
+ *
+ */
+C_KZG_RET reconstruct(
+    Blob *blob,
+    const Bytes32 *xs_bytes,
+    const Bytes32 *ys_bytes,
+    size_t n,
+    const KZGSettings *s
+) {
+    C_KZG_RET ret;
+    fr_t *xs = NULL;
+    fr_t *ys = NULL;
+    Polynomial *polys = NULL;
+
+    (void)s;
+
+    /* Ensure all inputs are unique */
+    for (size_t i = 0; i < n; i++) {
+        // TODO
+    }
+
+    /* Allocate space for internal representations */
+    ret = new_fr_array(&xs, n);
+    if (ret != C_KZG_OK) goto out;
+    ret = new_fr_array(&ys, n);
+    if (ret != C_KZG_OK) goto out;
+
+    /* Convert input values to internal types */
+    for (size_t i = 0; i < n; i++) {
+        ret = bytes_to_bls_field(&xs[i], &xs_bytes[i]);
+        if (ret != C_KZG_OK) goto out;
+        ret = bytes_to_bls_field(&ys[i], &ys_bytes[i]);
+        if (ret != C_KZG_OK) goto out;
+    }
+
+    /* Allocate space for all the polynomials we need */
+    ret = c_kzg_calloc((void **)&polys, n, sizeof(Polynomial));
+    if (ret != C_KZG_OK) goto out;
+
+    /* For each data point, compute the Lagrange basis polynomial */
+    for (size_t i = 0; i < n; i++) {
+        ret = compute_lagrange_basis(&polys[i], xs, n, i);
+        if (ret != C_KZG_OK) goto out;
+    }
+
+    /* Multiply with Y values */
+    for (size_t i = 0; i < n; i++) {
+        for (size_t j = 0; j < FIELD_ELEMENTS_PER_BLOB; j++) {
+            blst_fr_mul(&polys[i].evals[j], &polys[i].evals[j], &ys[i]);
+        }
+    }
+
+    /* Initialize the result with all zeros */
+    Polynomial result;
+    for (size_t i = 0; i < FIELD_ELEMENTS_PER_BLOB; i++) {
+        result.evals[i] = FR_ZERO;
+    }
+
+    /* Add them together */
+    for (size_t i = 0; i < n; i++) {
+        for (size_t j = 0; j < FIELD_ELEMENTS_PER_BLOB; j++) {
+            blst_fr_add(&result.evals[j], &result.evals[j], &polys[i].evals[j]);
+        }
+    }
+
+    /* Convert the polynomial to a blob */
+    for (size_t i = 0; i < FIELD_ELEMENTS_PER_BLOB; i++) {
+        bytes_from_bls_field(
+            (Bytes32 *)(blob->bytes + 32 * i), &result.evals[i]
+        );
+    }
+
+out:
+    c_kzg_free(xs);
+    c_kzg_free(ys);
+    c_kzg_free(polys);
+    return ret;
+}
