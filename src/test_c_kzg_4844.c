@@ -44,6 +44,25 @@ static void get_rand_bytes32(Bytes32 *out) {
     seed++;
 }
 
+#if 0
+static size_t get_rand_index(size_t max) {
+    Bytes32 data;
+    get_rand_bytes32(&data);
+    size_t value = *(size_t *)data.bytes;
+    return value % max;
+}
+
+static void shuffle_bytes32_array(Bytes32 *arr, size_t n) {
+    for (size_t i = n - 1; i > 0; i--) {
+        size_t j = get_rand_index(i + 1);
+        Bytes32 tmp;
+        memcpy(tmp.bytes, arr[i].bytes, 32);
+        memcpy(arr[i].bytes, arr[j].bytes, 32);
+        memcpy(arr[j].bytes, tmp.bytes, 32);
+    }
+}
+#endif
+
 static void get_rand_field_element(Bytes32 *out) {
     fr_t tmp_fr;
     Bytes32 tmp_bytes;
@@ -1727,6 +1746,110 @@ static void test_expand_root_of_unity__fails_wrong_root_of_unity(void) {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// Tests for reconstruction
+///////////////////////////////////////////////////////////////////////////////
+
+#if 0
+static void test_evaluate_polynomial_in_coefficient_form__simple(void) {
+    fr_t x, result, expected, poly[3];
+
+    /* 3x^2 + 2x + 1 */
+    fr_from_uint64(&poly[2], 3);
+    fr_from_uint64(&poly[1], 2);
+    fr_from_uint64(&poly[0], 1);
+
+    fr_from_uint64(&x, 27);
+    fr_from_uint64(&expected, 2242);
+
+    evaluate_polynomial_in_coefficient_form(&result, poly, &x, 3);
+    ASSERT_EQUALS(true, fr_equal(&expected, &result));
+}
+
+static void test_fft_fr__simple(void) {
+    const size_t n = 16;
+    fr_t result[n], ys[n];
+
+    for (size_t i = 0; i < n; i++) {
+        fr_from_uint64(&ys[i], i);
+    }
+
+    /* Do FFT interpolation */
+    fft_fr(result, ys, true, n, &s);
+
+    for (size_t i = 0; i < n; i++) {
+        printf("%lu = ", i);
+        Bytes32 y;
+        bytes_from_bls_field(&y, &result[i]);
+        for (size_t k = 0; k < 32; k++) {
+            printf("%02x", y.bytes[k]);
+        }
+        printf("\n");
+    }
+}
+
+static void test_reconstruct__random_blob(void) {
+    C_KZG_RET ret;
+    Blob blob;
+    const size_t n = 4096 * 2;
+    Bytes32 *xs_bytes = NULL;
+    Bytes32 *ys_bytes = NULL;
+    Bytes32 *shuffled_ys_bytes = NULL;
+    Bytes32 *reconstructed_samples = NULL;
+
+    get_rand_blob(&blob);
+
+    ret = c_kzg_calloc((void **)&xs_bytes, n, sizeof(Bytes32));
+    ASSERT_EQUALS(ret, C_KZG_OK);
+    ret = c_kzg_calloc((void **)&ys_bytes, n, sizeof(Bytes32));
+    ASSERT_EQUALS(ret, C_KZG_OK);
+    ret = c_kzg_calloc((void **)&shuffled_ys_bytes, n, sizeof(Bytes32));
+    ASSERT_EQUALS(ret, C_KZG_OK);
+    ret = c_kzg_calloc((void **)&reconstructed_samples, 8192, sizeof(Bytes32));
+    ASSERT_EQUALS(ret, C_KZG_OK);
+
+    for (size_t i = 0; i < n; i++) {
+        bytes_from_bls_field(&xs_bytes[i], &s.expanded_roots_of_unity[i]);
+        ret = sample(&ys_bytes[i], &blob, &xs_bytes[i], &s);
+        ASSERT_EQUALS(ret, C_KZG_OK);
+    }
+
+    /* Shuffle the list & do partial reconstruction */
+    memcpy(shuffled_ys_bytes, ys_bytes, n * 32);
+    shuffle_bytes32_array(shuffled_ys_bytes, n);
+
+    /* Reconstruct with half of the samples */
+    ret = reconstruct(reconstructed_samples, shuffled_ys_bytes, n / 2, &s);
+    ASSERT_EQUALS(ret, C_KZG_OK);
+
+    for (size_t i = 0; i < n; i++) {
+        Bytes32 y;
+        ret = sample(&y, &blob, &xs_bytes[i], &s);
+        ASSERT_EQUALS(ret, C_KZG_OK);
+
+#if 1
+        printf("root = %lu\n", i);
+
+        printf("y1 = ");
+        for (size_t k = 0; k < 32; k++) {
+            printf("%02x", y.bytes[k]);
+        }
+        printf("\n");
+
+        printf("y2 = ");
+        for (size_t k = 0; k < 32; k++) {
+            printf("%02x", reconstructed_samples[i].bytes[k]);
+        }
+        printf("\n");
+#endif
+
+        int diff;
+        diff = memcmp(y.bytes, reconstructed_samples[i].bytes, sizeof(Bytes32));
+        ASSERT_EQUALS(diff, 0);
+    }
+}
+#endif
+
+///////////////////////////////////////////////////////////////////////////////
 // Profiling Functions
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -1936,6 +2059,9 @@ int main(void) {
     RUN(test_expand_root_of_unity__succeeds_with_root);
     RUN(test_expand_root_of_unity__fails_not_root_of_unity);
     RUN(test_expand_root_of_unity__fails_wrong_root_of_unity);
+    // RUN(test_evaluate_polynomial_in_coefficient_form__simple);
+    // RUN(test_fft_fr__simple);
+    // RUN(test_reconstruct__random_blob);
 
     /*
      * These functions are only executed if we're profiling. To me, it makes

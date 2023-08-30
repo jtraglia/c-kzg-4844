@@ -165,6 +165,8 @@ typedef struct {
      * `SCALE2_ROOT_OF_UNITY` in bit-reversal permutation order,
      * length `max_width`. */
     fr_t *roots_of_unity;
+    fr_t *expanded_roots_of_unity;
+    fr_t *reverse_roots_of_unity;
     /** G1 group elements from the trusted setup,
      * in Lagrange form bit-reversal permutation. */
     g1_t *g1_values;

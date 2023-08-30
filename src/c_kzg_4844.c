@@ -837,6 +837,28 @@ out:
     return ret;
 }
 
+#if 0
+/**
+ * Evaluate a polynomial in coefficient form at a given point.
+ *
+ * @param[out] out The result of the evaluation
+ * @param[in]  p   The polynomial in coefficient form
+ * @param[in]  x   The point to evaluate the polynomial at
+ * @param[in]  len The number of terms in the polynomial
+ */
+static void evaluate_polynomial_in_coefficient_form(
+    fr_t *out, const fr_t *p, const fr_t *x, size_t len
+) {
+    fr_t tmp;
+    *out = p[0];
+    for (size_t i = 1; i < len; i++) {
+        fr_pow(&tmp, x, i);
+        blst_fr_mul(&tmp, &tmp, &p[i]);
+        blst_fr_add(out, out, &tmp);
+    }
+}
+#endif
+
 ///////////////////////////////////////////////////////////////////////////////
 // KZG Functions
 ///////////////////////////////////////////////////////////////////////////////
@@ -1571,23 +1593,14 @@ static C_KZG_RET expand_root_of_unity(
 
 /**
  * Initialize the roots of unity.
- *
- * @remark `roots_of_unity_out` may be modified even if there's an error.
- *
- * @param[out] roots_of_unity_out The roots of unity
- * @param[in]  max_scale          Log base 2 of the number of roots of unity to
- *                                be initialized
  */
-static C_KZG_RET compute_roots_of_unity(
-    fr_t *roots_of_unity_out, uint32_t max_scale
-) {
+static C_KZG_RET compute_roots_of_unity(KZGSettings *s) {
     C_KZG_RET ret;
-    uint64_t max_width;
     fr_t root_of_unity;
-    fr_t *expanded_roots = NULL;
 
-    /* Calculate the max width */
-    max_width = 1ULL << max_scale;
+    uint32_t max_scale = 0;
+    while ((1ULL << max_scale) < s->max_width)
+        max_scale++;
 
     /* Get the root of unity */
     CHECK(max_scale < NUM_ELEMENTS(SCALE2_ROOT_OF_UNITY));
@@ -1598,22 +1611,35 @@ static C_KZG_RET compute_roots_of_unity(
      * instead of re-using roots_of_unity_out because the expansion requires
      * max_width+1 elements.
      */
-    ret = new_fr_array(&expanded_roots, max_width + 1);
+    ret = new_fr_array(&s->expanded_roots_of_unity, s->max_width + 1);
     if (ret != C_KZG_OK) goto out;
 
     /* Populate the roots of unity */
-    ret = expand_root_of_unity(expanded_roots, &root_of_unity, max_width);
+    ret = expand_root_of_unity(
+        s->expanded_roots_of_unity, &root_of_unity, s->max_width
+    );
     if (ret != C_KZG_OK) goto out;
 
     /* Copy all but the last root to the roots of unity */
-    memcpy(roots_of_unity_out, expanded_roots, sizeof(fr_t) * max_width);
+    memcpy(
+        s->roots_of_unity,
+        s->expanded_roots_of_unity,
+        sizeof(fr_t) * s->max_width
+    );
 
     /* Permute the roots of unity */
-    ret = bit_reversal_permutation(roots_of_unity_out, sizeof(fr_t), max_width);
+    ret = bit_reversal_permutation(
+        s->roots_of_unity, sizeof(fr_t), s->max_width
+    );
     if (ret != C_KZG_OK) goto out;
 
+    /* Populate reverse roots of unity */
+    for (uint64_t i = 0; i <= s->max_width; i++) {
+        s->reverse_roots_of_unity[i] =
+            s->expanded_roots_of_unity[s->max_width - i];
+    }
+
 out:
-    c_kzg_free(expanded_roots);
     return ret;
 }
 
@@ -1681,6 +1707,8 @@ C_KZG_RET LOAD_TRUSTED_SETUP(
 
     out->max_width = 0;
     out->roots_of_unity = NULL;
+    out->expanded_roots_of_unity = NULL;
+    out->reverse_roots_of_unity = NULL;
     out->g1_values = NULL;
     out->g2_values = NULL;
 
@@ -1698,6 +1726,10 @@ C_KZG_RET LOAD_TRUSTED_SETUP(
 
     /* Allocate all of our arrays */
     ret = new_fr_array(&out->roots_of_unity, out->max_width);
+    if (ret != C_KZG_OK) goto out_error;
+    ret = new_fr_array(&out->expanded_roots_of_unity, out->max_width + 1);
+    if (ret != C_KZG_OK) goto out_error;
+    ret = new_fr_array(&out->reverse_roots_of_unity, out->max_width + 1);
     if (ret != C_KZG_OK) goto out_error;
     ret = new_g1_array(&out->g1_values, n1);
     if (ret != C_KZG_OK) goto out_error;
@@ -1735,7 +1767,7 @@ C_KZG_RET LOAD_TRUSTED_SETUP(
     if (ret != C_KZG_OK) goto out_error;
 
     /* Compute roots of unity and permute the G1 trusted setup */
-    ret = compute_roots_of_unity(out->roots_of_unity, max_scale);
+    ret = compute_roots_of_unity(out);
     if (ret != C_KZG_OK) goto out_error;
     ret = bit_reversal_permutation(out->g1_values, sizeof(g1_t), n1);
     if (ret != C_KZG_OK) goto out_error;
@@ -1801,4 +1833,666 @@ C_KZG_RET LOAD_TRUSTED_SETUP_FILE(KZGSettings *out, FILE *in) {
         g2_bytes,
         TRUSTED_SETUP_NUM_G2_POINTS
     );
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Fast Fourier Transform
+///////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Fast Fourier Transform.
+ *
+ * Recursively divide and conquer.
+ *
+ * @param[out] out    The results (array of length @p n)
+ * @param[in]  in     The input data (array of length @p n * @p stride)
+ * @param[in]  stride The input data stride
+ * @param[in]  roots  Roots of unity (array of length @p n * @p roots_stride)
+ * @param[in]  roots_stride The stride interval among the roots of unity
+ * @param[in]  n      Length of the FFT, must be a power of two
+ */
+static void fft_fr_fast(
+    fr_t *out,
+    const fr_t *in,
+    uint64_t stride,
+    const fr_t *roots,
+    uint64_t roots_stride,
+    uint64_t n
+) {
+    uint64_t half = n / 2;
+    if (half > 0) { // Tunable parameter
+        fft_fr_fast(out, in, stride * 2, roots, roots_stride * 2, half);
+        fft_fr_fast(
+            out + half, in + stride, stride * 2, roots, roots_stride * 2, half
+        );
+        for (uint64_t i = 0; i < half; i++) {
+            fr_t y_times_root;
+            blst_fr_mul(
+                &y_times_root, &out[i + half], &roots[i * roots_stride]
+            );
+            blst_fr_sub(&out[i + half], &out[i], &y_times_root);
+            blst_fr_add(&out[i], &out[i], &y_times_root);
+        }
+    } else {
+        *out = *in;
+    }
+}
+
+/**
+ * The main entry point for forward and reverse FFTs over the finite field.
+ *
+ * @param[out] out     The results (array of length @p n)
+ * @param[in]  in      The input data (array of length @p n)
+ * @param[in]  inverse `false` for forward transform, `true` for inverse
+ * transform
+ * @param[in]  n       Length of the FFT, must be a power of two
+ * @param[in]  s      Pointer to previously initialised FFTSettings structure
+ * with `max_width` at least @p n.
+ * @retval C_CZK_OK      All is well
+ * @retval C_CZK_BADARGS Invalid parameters were supplied
+ */
+C_KZG_RET fft_fr(
+    fr_t *out, const fr_t *in, bool inverse, uint64_t n, const KZGSettings *s
+) {
+    uint64_t stride = s->max_width / n;
+    CHECK(n <= s->max_width);
+    CHECK(is_power_of_two(n));
+    if (inverse) {
+        fr_t inv_len;
+        fr_from_uint64(&inv_len, n);
+        blst_fr_inverse(&inv_len, &inv_len);
+        fft_fr_fast(out, in, 1, s->reverse_roots_of_unity, stride, n);
+        for (uint64_t i = 0; i < n; i++) {
+            blst_fr_mul(&out[i], &out[i], &inv_len);
+        }
+    } else {
+        fft_fr_fast(out, in, 1, s->expanded_roots_of_unity, stride, n);
+    }
+    return C_KZG_OK;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Zero poly
+///////////////////////////////////////////////////////////////////////////////
+
+typedef struct {
+    fr_t *coeffs;
+    size_t length;
+} poly;
+
+/**
+ * Calculates the minimal polynomial that evaluates to zero for powers of roots
+ * of unity at the given indices.
+ *
+ * Uses straightforward long multiplication to calculate the product of `(x -
+ * r^i)` where `r` is a root of unity and the `i`s are the indices at which it
+ * must evaluate to zero. This results in a polynomial of degree @p len_indices.
+ *
+ * @param[in,out] dst      The zero polynomial for @p indices. The space
+ * allocated for coefficients must be at least @p len_indices + 1, as indicated
+ * by the `length` value on entry.
+ * @param[in]  indices     Array of missing indices of length @p len_indices
+ * @param[in]  len_indices Length of the missing indices array, @p indices
+ * @param[in]  stride      Stride length through the powers of the root of unity
+ * @param[in]  s          The FFT settings previously initialised with
+ * #new_fft_settings
+ * @retval C_CZK_OK      All is well
+ * @retval C_CZK_BADARGS Invalid parameters were supplied
+ */
+static C_KZG_RET do_zero_poly_mul_partial(
+    poly *dst,
+    const uint64_t *indices,
+    uint64_t len_indices,
+    uint64_t stride,
+    const KZGSettings *s
+) {
+
+    CHECK(len_indices > 0);
+    CHECK(dst->length >= len_indices + 1);
+
+    blst_fr_cneg(
+        &dst->coeffs[0], &s->expanded_roots_of_unity[indices[0] * stride], true
+    );
+
+    for (uint64_t i = 1; i < len_indices; i++) {
+        fr_t neg_di;
+        blst_fr_cneg(&neg_di, &s->expanded_roots_of_unity[indices[i] * stride], true);
+        dst->coeffs[i] = neg_di;
+        blst_fr_add(&dst->coeffs[i], &dst->coeffs[i], &dst->coeffs[i - 1]);
+        for (uint64_t j = i - 1; j > 0; j--) {
+            blst_fr_mul(&dst->coeffs[j], &dst->coeffs[j], &neg_di);
+            blst_fr_add(&dst->coeffs[j], &dst->coeffs[j], &dst->coeffs[j - 1]);
+        }
+        blst_fr_mul(&dst->coeffs[0], &dst->coeffs[0], &neg_di);
+    }
+
+    dst->coeffs[len_indices] = FR_ONE;
+    for (uint64_t i = len_indices + 1; i < dst->length; i++) {
+        dst->coeffs[i] = FR_ZERO;
+    }
+    dst->length = len_indices + 1;
+
+    return C_KZG_OK;
+}
+
+/**
+ * Copy all of the coefficients of polynomial @p p to @p out, padding to length
+ * @p p_len with zeros.
+ *
+ * @param[out] out     A copy of the coefficients of @p p padded to length @p
+ * out_len with zeros
+ * @param[in]  out_len The length of the desired output data, @p out
+ * @param[in]  p       The polynomial containing the data to be copied and
+ * padded
+ * @retval C_CZK_OK      All is well
+ * @retval C_CZK_BADARGS Invalid parameters were supplied
+ */
+static C_KZG_RET pad_p(fr_t *out, uint64_t out_len, const poly *p) {
+    CHECK(out_len >= p->length);
+    for (uint64_t i = 0; i < p->length; i++) {
+        out[i] = p->coeffs[i];
+    }
+    for (uint64_t i = p->length; i < out_len; i++) {
+        out[i] = FR_ZERO;
+    }
+    return C_KZG_OK;
+}
+
+/**
+ * Return the next highest power of two.
+ *
+ * If @p v is already a power of two, it is returned as-is.
+ *
+ * Adapted from https://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2
+ *
+ * @param[in] v A 64-bit unsigned integer <= 2^31
+ * @return      The lowest power of two equal or larger than @p v
+ */
+uint64_t next_power_of_two(uint64_t v) {
+    v--;
+    v |= v >> 1;
+    v |= v >> 2;
+    v |= v >> 4;
+    v |= v >> 8;
+    v |= v >> 16;
+    v |= v >> 32;
+    v++;
+    return v += (v == 0);
+}
+
+/**
+ * Calculate the product of the input polynomials via convolution.
+ *
+ * Pad the polynomials in @p ps, perform FFTs, point-wise multiply the results
+ * together, and apply an inverse FFT to the result.
+ *
+ * @param[out] out         Polynomial with @p len_out space allocated. The
+ * length will be set on return.
+ * @param[in]  len_out     Length of the domain of evaluation, a power of two
+ * @param      scratch     Scratch space of size at least 3 times the @p len_out
+ * @param[in]  len_scratch Length of @p scratch, at least 3 times @p len_out
+ * @param[in]  partials    Array of polynomials to be multiplied together
+ * @param[in]  partial_count The number of polynomials to be multiplied together
+ * @param[in]  s          The FFT settings previously initialised with
+ * #new_fft_settings
+ * @retval C_CZK_OK      All is well
+ * @retval C_CZK_BADARGS Invalid parameters were supplied
+ * @retval C_CZK_ERROR   An internal error occurred
+ */
+static C_KZG_RET reduce_partials(
+    poly *out,
+    uint64_t len_out,
+    fr_t *scratch,
+    uint64_t len_scratch,
+    const poly *partials,
+    uint64_t partial_count,
+    const KZGSettings *s
+) {
+    C_KZG_RET ret;
+
+    CHECK(is_power_of_two(len_out));
+    CHECK(len_scratch >= 3 * len_out);
+    CHECK(partial_count > 0);
+
+    // The degree of the output polynomial is the sum of the degrees of the
+    // input polynomials.
+    uint64_t out_degree = 0;
+    for (size_t i = 0; i < partial_count; i++) {
+        out_degree += partials[i].length - 1;
+    }
+    CHECK(out_degree + 1 <= len_out);
+
+    // Split `scratch` up into three equally sized working arrays
+    fr_t *p_padded = scratch;
+    fr_t *mul_eval_ps = scratch + len_out;
+    fr_t *p_eval = scratch + 2 * len_out;
+
+    // Do the last partial first: it is no longer than the others and the
+    // padding can remain in place for the rest.
+    ret = pad_p(p_padded, len_out, &partials[partial_count - 1]);
+    if (ret != C_KZG_OK) goto out;
+    ret = fft_fr(mul_eval_ps, p_padded, false, len_out, s);
+    if (ret != C_KZG_OK) goto out;
+
+    for (uint64_t i = 0; i < partial_count - 1; i++) {
+        ret = pad_p(p_padded, partials[i].length, &partials[i]);
+        if (ret != C_KZG_OK) goto out;
+        ret = fft_fr(p_eval, p_padded, false, len_out, s);
+        if (ret != C_KZG_OK) goto out;
+        for (uint64_t j = 0; j < len_out; j++) {
+            blst_fr_mul(&mul_eval_ps[j], &mul_eval_ps[j], &p_eval[j]);
+        }
+    }
+
+    ret = fft_fr(out->coeffs, mul_eval_ps, true, len_out, s);
+    if (ret != C_KZG_OK) goto out;
+
+    out->length = out_degree + 1;
+
+out:
+    return ret;
+}
+
+/** @def min_u64
+ *
+ * Safely find the minimum of two uint_64s.
+ */
+#define min_u64(a, b)                                                                                                  \
+    ({                                                                                                                 \
+        uint64_t _a = (a);                                                                                             \
+        uint64_t _b = (b);                                                                                             \
+        _a < _b ? _a : _b;                                                                                             \
+    })
+
+/**
+ * Calculate the minimal polynomial that evaluates to zero for powers of roots
+ * of unity that correspond to missing indices.
+ *
+ * This is done simply by multiplying together `(x - r^i)` for all the `i` that
+ * are missing indices, using a combination of direct multiplication
+ * (#do_zero_poly_mul_partial) and iterated multiplication via convolution
+ * (#reduce_partials).
+ *
+ * Also calculates the FFT (the "evaluation polynomial").
+ *
+ * @remark This fails when all the indices in our domain are missing (@p
+ * len_missing == @p length), since the resulting polynomial exceeds the size
+ * allocated. But we know that the answer is `x^length - 1` in that case if we
+ * ever need it.
+ *
+ * @param[out] zero_eval The "evaluation polynomial": the coefficients are the
+ * values of @p zero_poly for each power of `r`. Space required is @p length.
+ * @param[out] zero_poly The zero polynomial. On return the length will be set
+ * to `len_missing + 1` and the remaining coefficients set to zero.  Space
+ * required is @p length.
+ * @param[in]  length    Size of the domain of evaluation (number of powers of
+ * `r`)
+ * @param[in]  missing_indices Array length @p len_missing containing the
+ * indices of the missing coefficients
+ * @param[in]  len_missing     Length of @p missing_indices
+ * @param[in]  s        The FFT settings previously initialised with
+ * #new_fft_settings
+ * @retval C_CZK_OK      All is well
+ * @retval C_CZK_BADARGS Invalid parameters were supplied
+ * @retval C_CZK_ERROR   An internal error occurred
+ * @retval C_CZK_MALLOC  Memory allocation failed
+ *
+ * @todo What is the performance impact of tuning `degree_of_partial` and
+ * `reduction factor`?
+ */
+C_KZG_RET zero_polynomial_via_multiplication(
+    fr_t *zero_eval,
+    poly *zero_poly,
+    uint64_t length,
+    const uint64_t *missing_indices,
+    uint64_t len_missing,
+    const KZGSettings *s
+) {
+    C_KZG_RET ret;
+    if (len_missing == 0) {
+        zero_poly->length = 0;
+        for (uint64_t i = 0; i < length; i++) {
+            zero_eval[i] = FR_ZERO;
+            zero_poly->coeffs[i] = FR_ZERO;
+        }
+        return C_KZG_OK;
+    }
+    CHECK(len_missing < length);
+    CHECK(length <= s->max_width);
+    CHECK(is_power_of_two(length));
+
+    // Tunable parameter. Must be a power of two.
+    uint64_t degree_of_partial = 64;
+    uint64_t missing_per_partial = degree_of_partial - 1;
+    uint64_t domain_stride = s->max_width / length;
+    uint64_t partial_count = (len_missing + missing_per_partial - 1) /
+                             missing_per_partial;
+    uint64_t n = min_u64(
+        next_power_of_two(partial_count * degree_of_partial), length
+    );
+
+    if (len_missing <= missing_per_partial) {
+        ret = do_zero_poly_mul_partial(
+            zero_poly, missing_indices, len_missing, domain_stride, s
+        );
+        if (ret != C_KZG_OK) goto out;
+        ret = fft_fr(zero_eval, zero_poly->coeffs, false, length, s);
+        if (ret != C_KZG_OK) goto out;
+    } else {
+
+        // Work space for building and reducing the partials
+        fr_t *work;
+        ret = new_fr_array(
+            &work, next_power_of_two(partial_count * degree_of_partial)
+        );
+        if (ret != C_KZG_OK) goto out;
+
+        // Build the partials from the missing indices
+
+        // Just allocate pointers here since we're re-using `work` for the
+        // partial processing Combining partials can be done mostly in-place,
+        // using a scratchpad.
+        poly *partials;
+        ret = c_kzg_calloc((void **)&partials, partial_count, sizeof(poly));
+        if (ret != C_KZG_OK) goto out;
+
+        uint64_t offset = 0, out_offset = 0, max = len_missing;
+        for (size_t i = 0; i < partial_count; i++) {
+            uint64_t end = min_u64(offset + missing_per_partial, max);
+            partials[i].coeffs = &work[out_offset];
+                        partials[i].length = degree_of_partial;
+            do_zero_poly_mul_partial(
+                &partials[i],
+                &missing_indices[offset],
+                end - offset,
+                domain_stride,
+                s
+            );
+            if (ret != C_KZG_OK) goto out;
+            offset += missing_per_partial;
+            out_offset += degree_of_partial;
+        }
+        // Adjust the length of the last partial
+        partials[partial_count - 1].length = 1 + len_missing -
+                                             (partial_count - 1) *
+                                                 missing_per_partial;
+
+        // Reduce all the partials to a single polynomial
+        int reduction_factor =
+            4; // must be a power of 2 (for sake of the FFTs in reduce_partials)
+        fr_t *scratch;
+        new_fr_array(&scratch, n * 3);
+        if (ret != C_KZG_OK) goto out;
+
+        while (partial_count > 1) {
+            uint64_t reduced_count = (partial_count + reduction_factor - 1) /
+                                     reduction_factor;
+            uint64_t partial_size = next_power_of_two(partials[0].length);
+            for (uint64_t i = 0; i < reduced_count; i++) {
+                uint64_t start = i * reduction_factor;
+                uint64_t out_end = min_u64(
+                    (start + reduction_factor) * partial_size, n
+                );
+                uint64_t reduced_len = min_u64(
+                    out_end - start * partial_size, length
+                );
+                uint64_t partials_num = min_u64(
+                    reduction_factor, partial_count - start
+                );
+                partials[i].coeffs = work + start * partial_size;
+                if (partials_num > 1) {
+                    reduce_partials(
+                        &partials[i],
+                        reduced_len,
+                        scratch,
+                        n * 3,
+                        &partials[start],
+                        partials_num,
+                        s
+                    );
+                    if (ret != C_KZG_OK) goto out;
+                } else {
+                    partials[i].length = partials[start].length;
+                }
+            }
+            partial_count = reduced_count;
+        }
+
+        // Process final output
+        ret = pad_p(zero_poly->coeffs, length, &partials[0]);
+        if (ret != C_KZG_OK) goto out;
+        ret = fft_fr(zero_eval, zero_poly->coeffs, false, length, s);
+        if (ret != C_KZG_OK) goto out;
+
+        zero_poly->length = partials[0].length;
+
+        free(work);
+        free(partials);
+        free(scratch);
+    }
+
+out:
+    return C_KZG_OK;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Sample Recovery
+///////////////////////////////////////////////////////////////////////////////
+
+/** 5 is a primitive element, but actually this can be pretty much anything not
+ * 0 or a low-degree root of unity */
+#define SCALE_FACTOR 5
+
+/**
+ * Scale a polynomial in place.
+ *
+ * Multiplies each coefficient by `1 / scale_factor ^ i`. Equivalent to creating
+ * a polynomial that evaluates at `x * k` rather than `x`.
+ *
+ * @param[out,in] p The polynomial coefficients to be scaled
+ * @param[in] len_p Length of the polynomial coefficients
+ */
+static void scale_poly(fr_t *p, uint64_t len_p) {
+    fr_t scale_factor, factor_power, inv_factor;
+    fr_from_uint64(&scale_factor, SCALE_FACTOR);
+    blst_fr_inverse(&inv_factor, &scale_factor);
+    factor_power = FR_ONE;
+
+    for (uint64_t i = 1; i < len_p; i++) {
+        blst_fr_mul(&factor_power, &factor_power, &inv_factor);
+        blst_fr_mul(&p[i], &p[i], &factor_power);
+    }
+}
+
+/**
+ * Unscale a polynomial in place.
+ *
+ * Multiplies each coefficient by `scale_factor ^ i`. Equivalent to creating a
+ * polynomial that evaluates at `x / k` rather than `x`.
+ *
+ * @param[out,in] p The polynomial coefficients to be unscaled
+ * @param[in] len_p Length of the polynomial coefficients
+ */
+static void unscale_poly(fr_t *p, uint64_t len_p) {
+    fr_t scale_factor, factor_power;
+    fr_from_uint64(&scale_factor, SCALE_FACTOR);
+    factor_power = FR_ONE;
+
+    for (uint64_t i = 1; i < len_p; i++) {
+        blst_fr_mul(&factor_power, &factor_power, &scale_factor);
+        blst_fr_mul(&p[i], &p[i], &factor_power);
+    }
+}
+
+bool fr_is_null(const fr_t *p) {
+    uint64_t *a = (uint64_t *)p;
+    uint64_t f = 0xffffffffffffffffL;
+    return a[0] == f && a[1] == f && a[2] == f && a[3] == f;
+}
+
+/**
+ * Given a dataset with up to half the entries missing, return the reconstructed
+ * original.
+ *
+ * Assumes that the inverse FFT of the original data has the upper half of its
+ * values equal to zero.
+ *
+ * See
+ * https://ethresear.ch/t/reed-solomon-erasure-code-recovery-in-n-log-2-n-time-with-ffts/3039
+ *
+ * @param[out] reconstructed_data An attempted reconstruction of the original
+ * data
+ * @param[in]  samples            The data to be reconstructed, with `fr_null`
+ * set for missing values
+ * @param[in]  len_samples        The length of @p samples and @p
+ * reconstructed_data
+ * @param[in]  s                 The FFT settings previously initialised with
+ * #new_fft_settings
+ * @retval C_CZK_OK      All is well
+ * @retval C_CZK_BADARGS Invalid parameters were supplied
+ * @retval C_CZK_ERROR   An internal error occurred
+ * @retval C_CZK_MALLOC  Memory allocation failed
+ */
+C_KZG_RET recover_poly_from_samples(
+    fr_t *reconstructed_data,
+    fr_t *samples,
+    uint64_t len_samples,
+    KZGSettings *s
+) {
+    C_KZG_RET ret;
+    uint64_t *missing = NULL;
+    fr_t *scratch = NULL;
+
+    if (!is_power_of_two(len_samples)) {
+        ret = C_KZG_BADARGS;
+        goto out;
+    }
+
+    ret = c_kzg_calloc((void **)&missing, len_samples, sizeof(uint64_t));
+    if (ret != C_KZG_OK) goto out;
+
+    uint64_t len_missing = 0;
+    for (uint64_t i = 0; i < len_samples; i++) {
+        if (fr_is_null(&samples[i])) {
+            missing[len_missing++] = i;
+        }
+    }
+
+    // Make scratch areas, each of size len_samples. Cuts space required by 57%.
+
+    ret = new_fr_array(&scratch, 3 * len_samples);
+    if (ret != C_KZG_OK) goto out;
+
+    fr_t *scratch0 = scratch;
+    fr_t *scratch1 = scratch0 + len_samples;
+    fr_t *scratch2 = scratch1 + len_samples;
+
+    // Assign meaningful names to scratch spaces
+    fr_t *zero_eval = scratch0;
+    fr_t *poly_evaluations_with_zero = scratch2;
+    fr_t *poly_with_zero = scratch0;
+    fr_t *eval_scaled_poly_with_zero = scratch2;
+    fr_t *eval_scaled_zero_poly = scratch0;
+    fr_t *scaled_reconstructed_poly = scratch1;
+
+    poly zero_poly;
+    zero_poly.length = len_samples;
+    zero_poly.coeffs = scratch1;
+
+    // Calculate `Z_r,I`
+    ret = zero_polynomial_via_multiplication(
+        zero_eval, &zero_poly, len_samples, missing, len_missing, s
+    );
+    if (ret != C_KZG_OK) goto out;
+
+    // Check all is well
+    for (uint64_t i = 0; i < len_samples; i++) {
+        if (fr_is_null(&samples[i]) != fr_is_zero(&zero_eval[i])) {
+            printf("blah blah\n");
+            ret = C_KZG_BADARGS;
+            goto out;
+        }
+    }
+
+    // Construct E * Z_r,I: the loop makes the evaluation polynomial
+    for (size_t i = 0; i < len_samples; i++) {
+        if (fr_is_null(&samples[i])) {
+            poly_evaluations_with_zero[i] = FR_ZERO;
+        } else {
+            blst_fr_mul(
+                &poly_evaluations_with_zero[i], &samples[i], &zero_eval[i]
+            );
+        }
+    }
+    // Now inverse FFT so that poly_with_zero is (E * Z_r,I)(x) = (D * Z_r,I)(x)
+    ret = fft_fr(
+        poly_with_zero, poly_evaluations_with_zero, true, len_samples, s
+    );
+    if (ret != C_KZG_OK) goto out;
+
+    // x -> k * x
+    scale_poly(poly_with_zero, len_samples);
+    scale_poly(zero_poly.coeffs, zero_poly.length);
+
+    // Q1 = (D * Z_r,I)(k * x)
+    fr_t *scaled_poly_with_zero = poly_with_zero; // Renaming
+    // Q2 = Z_r,I(k * x)
+    fr_t *scaled_zero_poly = zero_poly.coeffs; // Renaming
+
+    // Polynomial division by convolution: Q3 = Q1 / Q2
+    ret = fft_fr(
+        eval_scaled_poly_with_zero, scaled_poly_with_zero, false, len_samples, s
+    );
+    if (ret != C_KZG_OK) goto out;
+
+    ret = fft_fr(
+        eval_scaled_zero_poly, scaled_zero_poly, false, len_samples, s
+    );
+    if (ret != C_KZG_OK) goto out;
+
+    fr_t *eval_scaled_reconstructed_poly = eval_scaled_poly_with_zero;
+    for (uint64_t i = 0; i < len_samples; i++) {
+        fr_div(
+            &eval_scaled_reconstructed_poly[i],
+            &eval_scaled_poly_with_zero[i],
+            &eval_scaled_zero_poly[i]
+        );
+    }
+
+    // The result of the division is D(k * x):
+    ret = fft_fr(
+        scaled_reconstructed_poly,
+        eval_scaled_reconstructed_poly,
+        true,
+        len_samples,
+        s
+    );
+    if (ret != C_KZG_OK) goto out;
+
+    // k * x -> x
+    unscale_poly(scaled_reconstructed_poly, len_samples);
+
+    // Finally we have D(x) which evaluates to our original data at the powers
+    // of roots of unity
+    fr_t *reconstructed_poly = scaled_reconstructed_poly; // Renaming
+
+    // The evaluation polynomial for D(x) is the reconstructed data:
+    ret = fft_fr(reconstructed_data, reconstructed_poly, false, len_samples, s);
+    if (ret != C_KZG_OK) goto out;
+
+    // Check all is well
+    for (uint64_t i = 0; i < len_samples; i++) {
+        if (fr_is_null(&samples[i])) continue;
+        if (!fr_equal(&reconstructed_data[i], &samples[i])) {
+            printf("frs aren't equal\n");
+            ret = C_KZG_BADARGS;
+            goto out;
+        }
+    }
+
+out:
+    free(scratch);
+    free(missing);
+
+    return ret;
 }
