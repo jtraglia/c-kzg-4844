@@ -2164,7 +2164,7 @@ C_KZG_RET zero_polynomial_via_multiplication(
     CHECK(is_power_of_two(length));
 
     // Tunable parameter. Must be a power of two.
-    uint64_t degree_of_partial = 64;
+    uint64_t degree_of_partial = 32;
     uint64_t missing_per_partial = degree_of_partial - 1;
     uint64_t domain_stride = s->max_width / length;
     uint64_t partial_count = (len_missing + missing_per_partial - 1) /
@@ -2329,31 +2329,52 @@ static void unscale_poly(fr_t *p, uint64_t len_p) {
 }
 
 /**
- * Given a dataset with up to half the entries missing, return the reconstructed
- * original.
+ * Given a dataset with up to half the entries missing, return the
+ * reconstructed original. Assumes that the inverse FFT of the original data
+ * has the upper half of its values equal to zero.
  *
- * Assumes that the inverse FFT of the original data has the upper half of its
- * values equal to zero.
- *
- * See
- * https://ethresear.ch/t/reed-solomon-erasure-code-recovery-in-n-log-2-n-time-with-ffts/3039
- *
- * @param[out] reconstructed_data An attempted reconstruction of the original
- * data
- * @param[in]  samples            The data to be reconstructed, with `fr_null`
- * set for missing values
+ * @param[out]  recovered   A preallocated array for recovered samples
+ * @param[in]   samples     The samples that you have
  * @param[in]   s           The trusted setup
+ *
+ * @remark The array of samples must be 2n length and in the correct order.
+ * @remark Missing samples should be equal to FR_NULL.
  */
 C_KZG_RET recover_samples_impl(
-    fr_t *reconstructed_data, fr_t *samples, const KZGSettings *s
+    fr_t *recovered, fr_t *samples, const KZGSettings *s
 ) {
     C_KZG_RET ret;
     uint64_t *missing = NULL;
-    fr_t *scratch = NULL;
+    fr_t *zero_eval = NULL;
+    fr_t *poly_evaluations_with_zero = NULL;
+    fr_t *poly_with_zero = NULL;
+    fr_t *eval_scaled_poly_with_zero = NULL;
+    fr_t *eval_scaled_zero_poly = NULL;
+    fr_t *scaled_reconstructed_poly = NULL;
+    poly zero_poly;
 
+    /* Allocate space for arrays */
     ret = c_kzg_calloc((void **)&missing, s->max_width, sizeof(uint64_t));
     if (ret != C_KZG_OK) goto out;
+    ret = new_fr_array(&zero_eval, s->max_width);
+    if (ret != C_KZG_OK) goto out;
+    ret = new_fr_array(&poly_evaluations_with_zero, s->max_width);
+    if (ret != C_KZG_OK) goto out;
+    ret = new_fr_array(&poly_with_zero, s->max_width);
+    if (ret != C_KZG_OK) goto out;
+    ret = new_fr_array(&eval_scaled_poly_with_zero, s->max_width);
+    if (ret != C_KZG_OK) goto out;
+    ret = new_fr_array(&eval_scaled_zero_poly, s->max_width);
+    if (ret != C_KZG_OK) goto out;
+    ret = new_fr_array(&scaled_reconstructed_poly, s->max_width);
+    if (ret != C_KZG_OK) goto out;
 
+    /* Allocate space for the zero poly */
+    ret = new_fr_array(&zero_poly.coeffs, s->max_width);
+    if (ret != C_KZG_OK) goto out;
+    zero_poly.length = s->max_width;
+
+    /* Identify missing samples */
     uint64_t len_missing = 0;
     for (uint64_t i = 0; i < s->max_width; i++) {
         if (fr_is_null(&samples[i])) {
@@ -2361,26 +2382,11 @@ C_KZG_RET recover_samples_impl(
         }
     }
 
-    // Make scratch areas. Cuts space required by 57%.
-
-    ret = new_fr_array(&scratch, 3 * s->max_width);
-    if (ret != C_KZG_OK) goto out;
-
-    fr_t *scratch0 = scratch;
-    fr_t *scratch1 = scratch0 + s->max_width;
-    fr_t *scratch2 = scratch1 + s->max_width;
-
-    // Assign meaningful names to scratch spaces
-    fr_t *zero_eval = scratch0;
-    fr_t *poly_evaluations_with_zero = scratch2;
-    fr_t *poly_with_zero = scratch0;
-    fr_t *eval_scaled_poly_with_zero = scratch2;
-    fr_t *eval_scaled_zero_poly = scratch0;
-    fr_t *scaled_reconstructed_poly = scratch1;
-
-    poly zero_poly;
-    zero_poly.length = s->max_width;
-    zero_poly.coeffs = scratch1;
+    /* Check that we have enough samples */
+    if (len_missing > s->max_width / 2) {
+        ret = C_KZG_BADARGS;
+        goto out;
+    }
 
     // Calculate `Z_r,I`
     ret = zero_polynomial_via_multiplication(
@@ -2398,6 +2404,7 @@ C_KZG_RET recover_samples_impl(
             );
         }
     }
+
     // Now inverse FFT so that poly_with_zero is (E * Z_r,I)(x) = (D * Z_r,I)(x)
     ret = fft_fr(
         poly_with_zero, poly_evaluations_with_zero, true, s->max_width, s
@@ -2455,14 +2462,17 @@ C_KZG_RET recover_samples_impl(
     fr_t *reconstructed_poly = scaled_reconstructed_poly; // Renaming
 
     // The evaluation polynomial for D(x) is the reconstructed data:
-    ret = fft_fr(
-        reconstructed_data, reconstructed_poly, false, s->max_width, s
-    );
+    ret = fft_fr(recovered, reconstructed_poly, false, s->max_width, s);
     if (ret != C_KZG_OK) goto out;
 
 out:
-    free(scratch);
-    free(missing);
+    c_kzg_free(missing);
+    c_kzg_free(zero_eval);
+    c_kzg_free(poly_evaluations_with_zero);
+    c_kzg_free(poly_with_zero);
+    c_kzg_free(eval_scaled_poly_with_zero);
+    c_kzg_free(eval_scaled_zero_poly);
+    c_kzg_free(scaled_reconstructed_poly);
 
     return ret;
 }
