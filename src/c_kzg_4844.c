@@ -2355,8 +2355,6 @@ bool fr_is_null(const fr_t *aa) {
  * data
  * @param[in]  samples            The data to be reconstructed, with `fr_null`
  * set for missing values
- * @param[in]  len_samples        The length of @p samples and @p
- * reconstructed_data
  * @param[in]  s                 The FFT settings previously initialised with
  * #new_fft_settings
  * @retval C_CZK_OK      All is well
@@ -2367,36 +2365,30 @@ bool fr_is_null(const fr_t *aa) {
 C_KZG_RET recover_samples_impl(
     fr_t *reconstructed_data,
     fr_t *samples,
-    uint64_t len_samples,
-    KZGSettings *s
+    const KZGSettings *s
 ) {
     C_KZG_RET ret;
     uint64_t *missing = NULL;
     fr_t *scratch = NULL;
 
-    if (!is_power_of_two(len_samples)) {
-        ret = C_KZG_BADARGS;
-        goto out;
-    }
-
-    ret = c_kzg_calloc((void **)&missing, len_samples, sizeof(uint64_t));
+    ret = c_kzg_calloc((void **)&missing, s->max_width, sizeof(uint64_t));
     if (ret != C_KZG_OK) goto out;
 
     uint64_t len_missing = 0;
-    for (uint64_t i = 0; i < len_samples; i++) {
+    for (uint64_t i = 0; i < s->max_width; i++) {
         if (fr_is_null(&samples[i])) {
             missing[len_missing++] = i;
         }
     }
 
-    // Make scratch areas, each of size len_samples. Cuts space required by 57%.
+    // Make scratch areas, each of size s->max_width. Cuts space required by 57%.
 
-    ret = new_fr_array(&scratch, 3 * len_samples);
+    ret = new_fr_array(&scratch, 3 * s->max_width);
     if (ret != C_KZG_OK) goto out;
 
     fr_t *scratch0 = scratch;
-    fr_t *scratch1 = scratch0 + len_samples;
-    fr_t *scratch2 = scratch1 + len_samples;
+    fr_t *scratch1 = scratch0 + s->max_width;
+    fr_t *scratch2 = scratch1 + s->max_width;
 
     // Assign meaningful names to scratch spaces
     fr_t *zero_eval = scratch0;
@@ -2407,29 +2399,17 @@ C_KZG_RET recover_samples_impl(
     fr_t *scaled_reconstructed_poly = scratch1;
 
     poly zero_poly;
-    zero_poly.length = len_samples;
+    zero_poly.length = s->max_width;
     zero_poly.coeffs = scratch1;
 
     // Calculate `Z_r,I`
     ret = zero_polynomial_via_multiplication(
-        zero_eval, &zero_poly, len_samples, missing, len_missing, s
+        zero_eval, &zero_poly, s->max_width, missing, len_missing, s
     );
     if (ret != C_KZG_OK) goto out;
 
-#if 0
-    // Check all is well
-    for (uint64_t i = 0; i < len_samples; i++) {
-        if (!fr_is_null(&samples[i])) continue;
-        if (!fr_is_zero(&zero_eval[i])) {
-            printf("expected field to be zero\n");
-            ret = C_KZG_BADARGS;
-            goto out;
-        }
-    }
-#endif
-
     // Construct E * Z_r,I: the loop makes the evaluation polynomial
-    for (size_t i = 0; i < len_samples; i++) {
+    for (size_t i = 0; i < s->max_width; i++) {
         if (fr_is_null(&samples[i])) {
             poly_evaluations_with_zero[i] = FR_ZERO;
         } else {
@@ -2440,12 +2420,12 @@ C_KZG_RET recover_samples_impl(
     }
     // Now inverse FFT so that poly_with_zero is (E * Z_r,I)(x) = (D * Z_r,I)(x)
     ret = fft_fr(
-        poly_with_zero, poly_evaluations_with_zero, true, len_samples, s
+        poly_with_zero, poly_evaluations_with_zero, true, s->max_width, s
     );
     if (ret != C_KZG_OK) goto out;
 
     // x -> k * x
-    scale_poly(poly_with_zero, len_samples);
+    scale_poly(poly_with_zero, s->max_width);
     scale_poly(zero_poly.coeffs, zero_poly.length);
 
     // Q1 = (D * Z_r,I)(k * x)
@@ -2455,17 +2435,17 @@ C_KZG_RET recover_samples_impl(
 
     // Polynomial division by convolution: Q3 = Q1 / Q2
     ret = fft_fr(
-        eval_scaled_poly_with_zero, scaled_poly_with_zero, false, len_samples, s
+        eval_scaled_poly_with_zero, scaled_poly_with_zero, false, s->max_width, s
     );
     if (ret != C_KZG_OK) goto out;
 
     ret = fft_fr(
-        eval_scaled_zero_poly, scaled_zero_poly, false, len_samples, s
+        eval_scaled_zero_poly, scaled_zero_poly, false, s->max_width, s
     );
     if (ret != C_KZG_OK) goto out;
 
     fr_t *eval_scaled_reconstructed_poly = eval_scaled_poly_with_zero;
-    for (uint64_t i = 0; i < len_samples; i++) {
+    for (uint64_t i = 0; i < s->max_width; i++) {
         fr_div(
             &eval_scaled_reconstructed_poly[i],
             &eval_scaled_poly_with_zero[i],
@@ -2478,33 +2458,21 @@ C_KZG_RET recover_samples_impl(
         scaled_reconstructed_poly,
         eval_scaled_reconstructed_poly,
         true,
-        len_samples,
+        s->max_width,
         s
     );
     if (ret != C_KZG_OK) goto out;
 
     // k * x -> x
-    unscale_poly(scaled_reconstructed_poly, len_samples);
+    unscale_poly(scaled_reconstructed_poly, s->max_width);
 
     // Finally we have D(x) which evaluates to our original data at the powers
     // of roots of unity
     fr_t *reconstructed_poly = scaled_reconstructed_poly; // Renaming
 
     // The evaluation polynomial for D(x) is the reconstructed data:
-    ret = fft_fr(reconstructed_data, reconstructed_poly, false, len_samples, s);
+    ret = fft_fr(reconstructed_data, reconstructed_poly, false, s->max_width, s);
     if (ret != C_KZG_OK) goto out;
-
-#if 0
-    // Check all is well
-    for (uint64_t i = 0; i < len_samples; i++) {
-        if (fr_is_null(&samples[i])) continue;
-        if (!fr_equal(&reconstructed_data[i], &samples[i])) {
-            printf("reconstructed doesn't match\n");
-            ret = C_KZG_BADARGS;
-            goto out;
-        }
-    }
-#endif
 
 out:
     free(scratch);
@@ -2514,6 +2482,16 @@ out:
 }
 
 /**
+ * Given at least n samples, recover the missing samples.
+ *
+ * @param[out]  recovered   A preallocated array for recovered samples
+ * @param[in]   samples     The samples that you have
+ * @param[in]   s           The trusted setup
+ *
+ * @remark Where n is the number of fields in the blob.
+ * @remark The array of samples must be 2n length and in the correct order.
+ * @remark Missing samples are marked as 0xffff...ffff (32 bytes).
+ * @remark Recovery is faster if there are fewer missing samples.
  */
 C_KZG_RET recover_samples(
     Bytes32 *recovered, const Bytes32 *samples, const KZGSettings *s
@@ -2522,13 +2500,16 @@ C_KZG_RET recover_samples(
     fr_t *recovered_fr = NULL;
     fr_t *samples_fr = NULL;
 
+    /* Allocate space fr-form arrays */
     ret = new_fr_array(&recovered_fr, s->max_width);
     if (ret != C_KZG_OK) goto out;
     ret = new_fr_array(&samples_fr, s->max_width);
     if (ret != C_KZG_OK) goto out;
 
+    /* Convert samples to fr-form */
     for (size_t i = 0; i < s->max_width; i++) {
-        if (!memcmp(&samples[i].bytes, &FR_NULL, 32)) {
+        /* Missing samples are marked as 0xffff...ffff */
+        if (!memcmp(&samples[i].bytes, &FR_NULL, sizeof(Bytes32))) {
             samples_fr[i] = FR_NULL;
         } else {
             ret = bytes_to_bls_field(&samples_fr[i], &samples[i]);
@@ -2536,9 +2517,11 @@ C_KZG_RET recover_samples(
         }
     }
 
-    ret = recover_samples_impl(recovered_fr, samples_fr, s->max_width, (KZGSettings *)s);
+    /* Call the implementation function to do the bulk of the work */
+    ret = recover_samples_impl(recovered_fr, samples_fr, s);
     if (ret != C_KZG_OK) goto out;
 
+    /* Convert the recovered samples to byte-form */
     for (size_t i = 0; i < s->max_width; i++) {
         bytes_from_bls_field(&recovered[i], &recovered_fr[i]);
     }
@@ -2549,9 +2532,18 @@ out:
     return ret;
 }
 
-/*
- * The number of samples is 2n where n=FIELD_ELEMENTS_PER_BLOB.
- * The inputs are the expanded roots of unity.
+/**
+ * Given a blob, get 2n samples.
+ *
+ * @param[out]  samples A preallocated array for samples
+ * @param[in]   blob    The blob to get samples for
+ * @param[in]   s       The trusted setup
+ *
+ * @remark Where n is the number of fields in the blob.
+ * @remark If a blob has 4096 fields, there will be 8192 samples.
+ * @remark Use samples_to_blob to convert the samples into a blob.
+ * @remark Up to half of these samples may be lost.
+ * @remark Use recover_samples to recover missing samples.
  */
 C_KZG_RET get_samples(
     Bytes32 *samples, const Blob *blob, const KZGSettings *s
@@ -2566,16 +2558,20 @@ C_KZG_RET get_samples(
     ret = new_fr_array(&samples_fr, s->max_width);
     if (ret != C_KZG_OK) goto out;
 
-    /* For a poly with 8192 fields, set the upper half to zero */
-    size_t half = sizeof(fr_t) * s->max_width / 2;
-    memset(poly + half, 0, half);
+    /* Initialize all of the polynomial fields to zero */
+    memset(poly, 0, sizeof(fr_t) * s->max_width);
 
-    /* Convert the blob to a polynomial */
+    /*
+     * Convert the blob to a polynomial. Note that only the first 4096 fields
+     * of the polynomial will be set. The upper 4096 fields will remain zero.
+     * This is required because the polynomial will be evaluated with 8192
+     * roots of unity.
+     */
     ret = blob_to_polynomial((Polynomial *)poly, blob);
     if (ret != C_KZG_OK) return ret;
 
     /* Get the samples via forward transformation */
-    ret = fft_fr(samples_fr, poly, false, s->max_width, (KZGSettings *)s);
+    ret = fft_fr(samples_fr, poly, false, s->max_width, s);
     if (ret != C_KZG_OK) return ret;
 
     /* Convert all of the samples to byte-form */
@@ -2589,6 +2585,16 @@ out:
     return ret;
 }
 
+/**
+ * Given 2n samples, get a blob.
+ *
+ * @param[out]  samples A preallocated array for samples
+ * @param[in]   blob    The blob to get samples for
+ * @param[in]   s       The trusted setup
+ *
+ * @remark Where n is the number of fields in the blob.
+ * @remark If a blob has 4096 fields, you need 8192 samples.
+ */
 C_KZG_RET samples_to_blob(
     Blob *blob, const Bytes32 *samples, const KZGSettings *s
 ) {
