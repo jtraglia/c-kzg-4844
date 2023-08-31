@@ -1,7 +1,6 @@
 package ckzg4844
 
 import (
-	"fmt"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -398,6 +397,15 @@ func Benchmark(b *testing.B) {
 	commitments := [length]Bytes48{}
 	proofs := [length]Bytes48{}
 	fields := [length]Bytes32{}
+	samples := [length][]Bytes32{}
+	partial_samples := [length][]Bytes32{}
+	null_val := Bytes32{
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+	}
+
 	for i := 0; i < length; i++ {
 		blob := getRandBlob(int64(i))
 		commitment, err := BlobToKZGCommitment(blob)
@@ -409,43 +417,74 @@ func Benchmark(b *testing.B) {
 		commitments[i] = Bytes48(commitment)
 		proofs[i] = Bytes48(proof)
 		fields[i] = getRandFieldElement(int64(i))
+		samples[i], err = GetSamples(blobs[i])
+		require.NoError(b, err)
+
+		partial_samples[i] = make([]Bytes32, FieldElementsPerBlob*2)
+		for j := 0; j < FieldElementsPerBlob*2; j++ {
+			if j%2 == 0 {
+				partial_samples[i][j] = null_val
+			} else {
+				partial_samples[i][j] = samples[i][j]
+			}
+		}
 	}
 
-	b.Run("BlobToKZGCommitment", func(b *testing.B) {
-		for n := 0; n < b.N; n++ {
-			_, _ = BlobToKZGCommitment(blobs[0])
-		}
-	})
-
-	b.Run("ComputeKZGProof", func(b *testing.B) {
-		for n := 0; n < b.N; n++ {
-			_, _, _ = ComputeKZGProof(blobs[0], fields[0])
-		}
-	})
-
-	b.Run("ComputeBlobKZGProof", func(b *testing.B) {
-		for n := 0; n < b.N; n++ {
-			_, _ = ComputeBlobKZGProof(blobs[0], commitments[0])
-		}
-	})
-
-	b.Run("VerifyKZGProof", func(b *testing.B) {
-		for n := 0; n < b.N; n++ {
-			_, _ = VerifyKZGProof(commitments[0], fields[0], fields[1], proofs[0])
-		}
-	})
-
-	b.Run("VerifyBlobKZGProof", func(b *testing.B) {
-		for n := 0; n < b.N; n++ {
-			_, _ = VerifyBlobKZGProof(blobs[0], commitments[0], proofs[0])
-		}
-	})
-
-	for i := 1; i <= len(blobs); i *= 2 {
-		b.Run(fmt.Sprintf("VerifyBlobKZGProofBatch(count=%v)", i), func(b *testing.B) {
+	/*
+		b.Run("BlobToKZGCommitment", func(b *testing.B) {
 			for n := 0; n < b.N; n++ {
-				_, _ = VerifyBlobKZGProofBatch(blobs[:i], commitments[:i], proofs[:i])
+				_, _ = BlobToKZGCommitment(blobs[0])
 			}
 		})
-	}
+
+		b.Run("ComputeKZGProof", func(b *testing.B) {
+			for n := 0; n < b.N; n++ {
+				_, _, _ = ComputeKZGProof(blobs[0], fields[0])
+			}
+		})
+
+		b.Run("ComputeBlobKZGProof", func(b *testing.B) {
+			for n := 0; n < b.N; n++ {
+				_, _ = ComputeBlobKZGProof(blobs[0], commitments[0])
+			}
+		})
+
+		b.Run("VerifyKZGProof", func(b *testing.B) {
+			for n := 0; n < b.N; n++ {
+				_, _ = VerifyKZGProof(commitments[0], fields[0], fields[1], proofs[0])
+			}
+		})
+
+		b.Run("VerifyBlobKZGProof", func(b *testing.B) {
+			for n := 0; n < b.N; n++ {
+				_, _ = VerifyBlobKZGProof(blobs[0], commitments[0], proofs[0])
+			}
+		})
+
+		for i := 1; i <= len(blobs); i *= 2 {
+			b.Run(fmt.Sprintf("VerifyBlobKZGProofBatch(count=%v)", i), func(b *testing.B) {
+				for n := 0; n < b.N; n++ {
+					_, _ = VerifyBlobKZGProofBatch(blobs[:i], commitments[:i], proofs[:i])
+				}
+			})
+		}
+	*/
+
+	b.Run("GetSamples", func(b *testing.B) {
+		for n := 0; n < b.N; n++ {
+			_, _ = GetSamples(blobs[0])
+		}
+	})
+
+	b.Run("RecoverSamples", func(b *testing.B) {
+		for n := 0; n < b.N; n++ {
+			_, _ = RecoverSamples(partial_samples[0])
+		}
+	})
+
+	b.Run("SamplesToBlob", func(b *testing.B) {
+		for n := 0; n < b.N; n++ {
+			_, _ = SamplesToBlob(samples[0])
+		}
+	})
 }

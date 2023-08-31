@@ -2516,7 +2516,7 @@ out:
 /**
  */
 C_KZG_RET recover_samples(
-    Bytes32 *recovered, Bytes32 *samples, KZGSettings *s
+    Bytes32 *recovered, const Bytes32 *samples, const KZGSettings *s
 ) {
     C_KZG_RET ret;
     fr_t *recovered_fr = NULL;
@@ -2536,7 +2536,7 @@ C_KZG_RET recover_samples(
         }
     }
 
-    ret = recover_samples_impl(recovered_fr, samples_fr, s->max_width, s);
+    ret = recover_samples_impl(recovered_fr, samples_fr, s->max_width, (KZGSettings *)s);
     if (ret != C_KZG_OK) goto out;
 
     for (size_t i = 0; i < s->max_width; i++) {
@@ -2575,12 +2575,48 @@ C_KZG_RET get_samples(
     if (ret != C_KZG_OK) return ret;
 
     /* Get the samples via forward transformation */
-    ret = fft_fr(samples_fr, poly, false, s->max_width, s);
+    ret = fft_fr(samples_fr, poly, false, s->max_width, (KZGSettings *)s);
     if (ret != C_KZG_OK) return ret;
 
     /* Convert all of the samples to byte-form */
     for (size_t i = 0; i < s->max_width; i++) {
         bytes_from_bls_field(&samples[i], &samples_fr[i]);
+    }
+
+out:
+    c_kzg_free(poly);
+    c_kzg_free(samples_fr);
+    return ret;
+}
+
+C_KZG_RET samples_to_blob(
+    Blob *blob, const Bytes32 *samples, const KZGSettings *s
+) {
+    C_KZG_RET ret;
+    fr_t *poly = NULL;
+    fr_t *samples_fr = NULL;
+
+    /* Allocate space fr-form arrays */
+    ret = new_fr_array(&poly, s->max_width);
+    if (ret != C_KZG_OK) goto out;
+    ret = new_fr_array(&samples_fr, s->max_width);
+    if (ret != C_KZG_OK) goto out;
+
+    /* Convert the samples to fr-form */
+    for (size_t i = 0; i < s->max_width; i++) {
+        ret = bytes_to_bls_field(&samples_fr[i], &samples[i]);
+        if (ret != C_KZG_OK) goto out;
+    }
+
+    /* Get the polynomial via inverse transformation */
+    ret = fft_fr(poly, samples_fr, true, s->max_width, s);
+    if (ret != C_KZG_OK) return ret;
+
+    /* Convert the polynomial to a blob */
+    Bytes32 *field = (Bytes32 *)blob->bytes;
+    for (size_t i = 0; i < FIELD_ELEMENTS_PER_BLOB; i++) {
+        bytes_from_bls_field(field, &poly[i]);
+        field++;
     }
 
 out:

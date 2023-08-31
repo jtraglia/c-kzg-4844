@@ -1787,10 +1787,20 @@ static void test_reconstruct__random_blob(void) {
     ret = recover_samples(recovered, partial, &s);
     ASSERT_EQUALS(ret, C_KZG_OK);
 
+    /* Check that all of the samples match */
     for (size_t i = 0; i < n; i++) {
         diff = memcmp(samples[i].bytes, recovered[i].bytes, sizeof(Bytes32));
         ASSERT_EQUALS(diff, 0);
     }
+
+    /* Recover the blob from the recovered samples */
+    Blob recovered_blob;
+    ret = samples_to_blob(&recovered_blob, recovered, &s);
+    ASSERT_EQUALS(ret, C_KZG_OK);
+
+    /* Ensure the blobs are the same */
+    diff = memcmp(blob.bytes, recovered_blob.bytes, sizeof(Blob));
+    ASSERT_EQUALS(diff, 0);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
