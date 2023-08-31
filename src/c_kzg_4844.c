@@ -2416,6 +2416,7 @@ C_KZG_RET recover_poly_from_samples_impl(
     );
     if (ret != C_KZG_OK) goto out;
 
+#if 0
     // Check all is well
     for (uint64_t i = 0; i < len_samples; i++) {
         if (!fr_is_null(&samples[i])) continue;
@@ -2425,6 +2426,7 @@ C_KZG_RET recover_poly_from_samples_impl(
             goto out;
         }
     }
+#endif
 
     // Construct E * Z_r,I: the loop makes the evaluation polynomial
     for (size_t i = 0; i < len_samples; i++) {
@@ -2492,6 +2494,7 @@ C_KZG_RET recover_poly_from_samples_impl(
     ret = fft_fr(reconstructed_data, reconstructed_poly, false, len_samples, s);
     if (ret != C_KZG_OK) goto out;
 
+#if 0
     // Check all is well
     for (uint64_t i = 0; i < len_samples; i++) {
         if (fr_is_null(&samples[i])) continue;
@@ -2501,6 +2504,7 @@ C_KZG_RET recover_poly_from_samples_impl(
             goto out;
         }
     }
+#endif
 
 out:
     free(scratch);
@@ -2509,6 +2513,8 @@ out:
     return ret;
 }
 
+/**
+ */
 C_KZG_RET recover_poly_from_samples(
     Bytes32 *reconstructed_data_bytes,
     Bytes32 *samples_bytes,
@@ -2525,7 +2531,12 @@ C_KZG_RET recover_poly_from_samples(
     if (ret != C_KZG_OK) goto out;
 
     for (size_t i = 0; i < len_samples; i++) {
-        bytes_to_bls_field(&samples_fr[i], &samples_bytes[i]);
+        if (!memcmp(&samples_bytes[i].bytes, &FR_NULL, 32)) {
+            samples_fr[i] = FR_NULL;
+        } else {
+            ret = bytes_to_bls_field(&samples_fr[i], &samples_bytes[i]);
+            if (ret != C_KZG_OK) goto out;
+        }
     }
 
     ret = recover_poly_from_samples_impl(
@@ -2533,7 +2544,7 @@ C_KZG_RET recover_poly_from_samples(
     );
     if (ret != C_KZG_OK) goto out;
 
-    for (size_t i = 0; i < FIELD_ELEMENTS_PER_BLOB; i++) {
+    for (size_t i = 0; i < len_samples; i++) {
         bytes_from_bls_field(
             &reconstructed_data_bytes[i], &reconstructed_data_fr[i]
         );
@@ -2545,52 +2556,40 @@ out:
     return ret;
 }
 
-/**
- *
- * @param[out] y_bytes The output y point
- * @param[in]  blob    Blob representing polynomial
- * @param[in]  x_bytes The input x point
- * @param[in]  s       The trusted setup
+/*
+ * The number of samples is 2n where n=FIELD_ELEMENTS_PER_BLOB.
+ * The inputs are the expanded roots of unity.
  */
-C_KZG_RET sample(
-    Bytes32 *y_bytes,
-    const Blob *blob,
-    const Bytes32 *x_bytes,
-    const KZGSettings *s
-) {
+C_KZG_RET sample(Bytes32 *samples, const Blob *blob, const KZGSettings *s) {
     C_KZG_RET ret;
-    Polynomial poly;
-    fr_t x, y;
+    fr_t *poly = NULL;
+    fr_t *samples_fr = NULL;
 
-    /* Convert input values to internal types */
-    ret = blob_to_polynomial(&poly, blob);
+    /* Allocate space fr-form arrays */
+    ret = new_fr_array(&poly, s->max_width);
     if (ret != C_KZG_OK) goto out;
-    ret = bytes_to_bls_field(&x, x_bytes);
-    if (ret != C_KZG_OK) goto out;
-
-    /* Evaluate the polynomial at x to get y */
-    ret = evaluate_polynomial_in_evaluation_form(&y, &poly, &x, s);
+    ret = new_fr_array(&samples_fr, s->max_width);
     if (ret != C_KZG_OK) goto out;
 
-    /* Convert the result to bytes */
-    bytes_from_bls_field(y_bytes, &y);
+    /* For a poly with 8192 fields, set the upper half to zero */
+    size_t half = sizeof(fr_t) * s->max_width / 2;
+    memset(poly + half, 0, half);
+
+    /* Convert the blob to a polynomial */
+    ret = blob_to_polynomial((Polynomial *)poly, blob);
+    if (ret != C_KZG_OK) return ret;
+
+    /* Get the samples via forward transformation */
+    ret = fft_fr(samples_fr, poly, false, s->max_width, s);
+    if (ret != C_KZG_OK) return ret;
+
+    /* Convert all of the samples to byte-form */
+    for (size_t i = 0; i < s->max_width; i++) {
+        bytes_from_bls_field(&samples[i], &samples_fr[i]);
+    }
 
 out:
-    return ret;
-}
-
-C_KZG_RET sample2(
-    fr_t *y,
-    const fr_t *poly,
-    const fr_t *x,
-    const KZGSettings *s
-) {
-    C_KZG_RET ret;
-
-    /* Evaluate the polynomial at x to get y */
-    ret = evaluate_polynomial_in_evaluation_form(y, (Polynomial *)poly, x, s);
-    if (ret != C_KZG_OK) goto out;
-
-out:
+    c_kzg_free(poly);
+    c_kzg_free(samples_fr);
     return ret;
 }
