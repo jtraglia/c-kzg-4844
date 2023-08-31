@@ -156,6 +156,10 @@ static const fr_t FR_ONE = {
     0x00000001fffffffeL, 0x5884b7fa00034802L,
     0x998c4fefecbc4ff5L, 0x1824b159acc5056fL};
 
+static const fr_t FR_NULL = {
+    0xffffffffffffffffL, 0xffffffffffffffffL,
+    0xffffffffffffffffL, 0xffffffffffffffffL};
+
 // clang-format on
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1724,6 +1728,9 @@ C_KZG_RET LOAD_TRUSTED_SETUP(
     /* Set the max_width */
     out->max_width = 1ULL << max_scale;
 
+    /* For DAS reconstruction */
+    out->max_width *= 2;
+
     /* Allocate all of our arrays */
     ret = new_fr_array(&out->roots_of_unity, out->max_width);
     if (ret != C_KZG_OK) goto out_error;
@@ -1956,7 +1963,9 @@ static C_KZG_RET do_zero_poly_mul_partial(
 
     for (uint64_t i = 1; i < len_indices; i++) {
         fr_t neg_di;
-        blst_fr_cneg(&neg_di, &s->expanded_roots_of_unity[indices[i] * stride], true);
+        blst_fr_cneg(
+            &neg_di, &s->expanded_roots_of_unity[indices[i] * stride], true
+        );
         dst->coeffs[i] = neg_di;
         blst_fr_add(&dst->coeffs[i], &dst->coeffs[i], &dst->coeffs[i - 1]);
         for (uint64_t j = i - 1; j > 0; j--) {
@@ -2003,7 +2012,8 @@ static C_KZG_RET pad_p(fr_t *out, uint64_t out_len, const poly *p) {
  *
  * If @p v is already a power of two, it is returned as-is.
  *
- * Adapted from https://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2
+ * Adapted from
+ * https://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2
  *
  * @param[in] v A 64-bit unsigned integer <= 2^31
  * @return      The lowest power of two equal or larger than @p v
@@ -2097,11 +2107,11 @@ out:
  *
  * Safely find the minimum of two uint_64s.
  */
-#define min_u64(a, b)                                                                                                  \
-    ({                                                                                                                 \
-        uint64_t _a = (a);                                                                                             \
-        uint64_t _b = (b);                                                                                             \
-        _a < _b ? _a : _b;                                                                                             \
+#define min_u64(a, b) \
+    ({ \
+        uint64_t _a = (a); \
+        uint64_t _b = (b); \
+        _a < _b ? _a : _b; \
     })
 
 /**
@@ -2200,7 +2210,7 @@ C_KZG_RET zero_polynomial_via_multiplication(
         for (size_t i = 0; i < partial_count; i++) {
             uint64_t end = min_u64(offset + missing_per_partial, max);
             partials[i].coeffs = &work[out_offset];
-                        partials[i].length = degree_of_partial;
+            partials[i].length = degree_of_partial;
             do_zero_poly_mul_partial(
                 &partials[i],
                 &missing_indices[offset],
@@ -2324,10 +2334,11 @@ static void unscale_poly(fr_t *p, uint64_t len_p) {
     }
 }
 
-bool fr_is_null(const fr_t *p) {
-    uint64_t *a = (uint64_t *)p;
-    uint64_t f = 0xffffffffffffffffL;
-    return a[0] == f && a[1] == f && a[2] == f && a[3] == f;
+bool fr_is_null(const fr_t *aa) {
+    uint64_t a[4], b[4];
+    blst_uint64_from_fr(a, aa);
+    blst_uint64_from_fr(b, &FR_NULL);
+    return a[0] == b[0] && a[1] == b[1] && a[2] == b[2] && a[3] == b[3];
 }
 
 /**
@@ -2353,7 +2364,7 @@ bool fr_is_null(const fr_t *p) {
  * @retval C_CZK_ERROR   An internal error occurred
  * @retval C_CZK_MALLOC  Memory allocation failed
  */
-C_KZG_RET recover_poly_from_samples(
+C_KZG_RET recover_poly_from_samples_impl(
     fr_t *reconstructed_data,
     fr_t *samples,
     uint64_t len_samples,
@@ -2407,8 +2418,9 @@ C_KZG_RET recover_poly_from_samples(
 
     // Check all is well
     for (uint64_t i = 0; i < len_samples; i++) {
-        if (fr_is_null(&samples[i]) != fr_is_zero(&zero_eval[i])) {
-            printf("blah blah\n");
+        if (!fr_is_null(&samples[i])) continue;
+        if (!fr_is_zero(&zero_eval[i])) {
+            printf("expected field to be zero\n");
             ret = C_KZG_BADARGS;
             goto out;
         }
@@ -2484,7 +2496,7 @@ C_KZG_RET recover_poly_from_samples(
     for (uint64_t i = 0; i < len_samples; i++) {
         if (fr_is_null(&samples[i])) continue;
         if (!fr_equal(&reconstructed_data[i], &samples[i])) {
-            printf("frs aren't equal\n");
+            printf("reconstructed doesn't match\n");
             ret = C_KZG_BADARGS;
             goto out;
         }
@@ -2494,5 +2506,91 @@ out:
     free(scratch);
     free(missing);
 
+    return ret;
+}
+
+C_KZG_RET recover_poly_from_samples(
+    Bytes32 *reconstructed_data_bytes,
+    Bytes32 *samples_bytes,
+    uint64_t len_samples,
+    KZGSettings *s
+) {
+    C_KZG_RET ret;
+    fr_t *reconstructed_data_fr = NULL;
+    fr_t *samples_fr = NULL;
+
+    ret = new_fr_array(&reconstructed_data_fr, FIELD_ELEMENTS_PER_BLOB);
+    if (ret != C_KZG_OK) goto out;
+    ret = new_fr_array(&samples_fr, len_samples);
+    if (ret != C_KZG_OK) goto out;
+
+    for (size_t i = 0; i < len_samples; i++) {
+        bytes_to_bls_field(&samples_fr[i], &samples_bytes[i]);
+    }
+
+    ret = recover_poly_from_samples_impl(
+        reconstructed_data_fr, samples_fr, len_samples, s
+    );
+    if (ret != C_KZG_OK) goto out;
+
+    for (size_t i = 0; i < FIELD_ELEMENTS_PER_BLOB; i++) {
+        bytes_from_bls_field(
+            &reconstructed_data_bytes[i], &reconstructed_data_fr[i]
+        );
+    }
+
+out:
+    c_kzg_free(reconstructed_data_fr);
+    c_kzg_free(samples_fr);
+    return ret;
+}
+
+/**
+ *
+ * @param[out] y_bytes The output y point
+ * @param[in]  blob    Blob representing polynomial
+ * @param[in]  x_bytes The input x point
+ * @param[in]  s       The trusted setup
+ */
+C_KZG_RET sample(
+    Bytes32 *y_bytes,
+    const Blob *blob,
+    const Bytes32 *x_bytes,
+    const KZGSettings *s
+) {
+    C_KZG_RET ret;
+    Polynomial poly;
+    fr_t x, y;
+
+    /* Convert input values to internal types */
+    ret = blob_to_polynomial(&poly, blob);
+    if (ret != C_KZG_OK) goto out;
+    ret = bytes_to_bls_field(&x, x_bytes);
+    if (ret != C_KZG_OK) goto out;
+
+    /* Evaluate the polynomial at x to get y */
+    ret = evaluate_polynomial_in_evaluation_form(&y, &poly, &x, s);
+    if (ret != C_KZG_OK) goto out;
+
+    /* Convert the result to bytes */
+    bytes_from_bls_field(y_bytes, &y);
+
+out:
+    return ret;
+}
+
+C_KZG_RET sample2(
+    fr_t *y,
+    const fr_t *poly,
+    const fr_t *x,
+    const KZGSettings *s
+) {
+    C_KZG_RET ret;
+
+    /* Evaluate the polynomial at x to get y */
+    ret = evaluate_polynomial_in_evaluation_form(y, (Polynomial *)poly, x, s);
+    if (ret != C_KZG_OK) goto out;
+
+out:
     return ret;
 }

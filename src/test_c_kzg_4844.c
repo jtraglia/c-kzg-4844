@@ -1786,44 +1786,58 @@ static void test_fft_fr__simple(void) {
         printf("\n");
     }
 }
+#endif
 
+#if 0
 static void test_reconstruct__random_blob(void) {
     C_KZG_RET ret;
     Blob blob;
-    const size_t n = 4096 * 2;
-    Bytes32 *xs_bytes = NULL;
-    Bytes32 *ys_bytes = NULL;
-    Bytes32 *shuffled_ys_bytes = NULL;
+    size_t n = s.max_width;
+    Bytes32 *samples = NULL;
     Bytes32 *reconstructed_samples = NULL;
 
     get_rand_blob(&blob);
 
-    ret = c_kzg_calloc((void **)&xs_bytes, n, sizeof(Bytes32));
+    /* Limit blob to half the size */
+    memset(blob.bytes + (sizeof(Blob)/2), 0, sizeof(Blob)/2);
+
+    ret = c_kzg_calloc((void **)&samples, n, sizeof(Bytes32));
     ASSERT_EQUALS(ret, C_KZG_OK);
-    ret = c_kzg_calloc((void **)&ys_bytes, n, sizeof(Bytes32));
-    ASSERT_EQUALS(ret, C_KZG_OK);
-    ret = c_kzg_calloc((void **)&shuffled_ys_bytes, n, sizeof(Bytes32));
-    ASSERT_EQUALS(ret, C_KZG_OK);
-    ret = c_kzg_calloc((void **)&reconstructed_samples, 8192, sizeof(Bytes32));
+    ret = c_kzg_calloc((void **)&reconstructed_samples, n, sizeof(Bytes32));
     ASSERT_EQUALS(ret, C_KZG_OK);
 
+    printf("Blob:\n");
+    Bytes32 *field = (Bytes32 *)blob.bytes;
     for (size_t i = 0; i < n; i++) {
-        bytes_from_bls_field(&xs_bytes[i], &s.expanded_roots_of_unity[i]);
-        ret = sample(&ys_bytes[i], &blob, &xs_bytes[i], &s);
+        for (size_t j = 0; j < 32; j++) {
+            printf("%02x", field->bytes[j]);
+        }
+        printf("\n");
+        field++;
+    }
+
+    for (size_t i = 0; i < n/2; i++) {
+        Bytes32 x;
+        bytes_from_bls_field(&x, &s.expanded_roots_of_unity[i]);
+        ret = sample(&samples[i], &blob, &x, &s);
         ASSERT_EQUALS(ret, C_KZG_OK);
     }
 
-    /* Shuffle the list & do partial reconstruction */
-    memcpy(shuffled_ys_bytes, ys_bytes, n * 32);
-    shuffle_bytes32_array(shuffled_ys_bytes, n);
+    /* Erase half of the samples */
+    for (size_t i = n / 2; i < n; i++) {
+        memset(&samples[i], 0xff, sizeof(fr_t));
+    }
 
     /* Reconstruct with half of the samples */
-    ret = reconstruct(reconstructed_samples, shuffled_ys_bytes, n / 2, &s);
+    ret = recover_poly_from_samples(
+        reconstructed_samples, samples, n, &s
+    );
     ASSERT_EQUALS(ret, C_KZG_OK);
 
     for (size_t i = 0; i < n; i++) {
-        Bytes32 y;
-        ret = sample(&y, &blob, &xs_bytes[i], &s);
+        Bytes32 x, y;
+        bytes_from_bls_field(&x, &s.expanded_roots_of_unity[i]);
+        ret = sample(&y, &blob, &x, &s);
         ASSERT_EQUALS(ret, C_KZG_OK);
 
 #if 1
@@ -1848,6 +1862,88 @@ static void test_reconstruct__random_blob(void) {
     }
 }
 #endif
+
+static void test_reconstruct__half(void) {
+    size_t n = s.max_width / 2;
+
+    fr_t poly[n];
+    for (size_t i = 0; i < n / 2; i++) {
+        fr_from_uint64(&poly[i], i);
+    }
+    for (size_t i = n / 2; i < n; i++) {
+        poly[i] = FR_ZERO;
+    }
+
+    fr_t data[n];
+    ASSERT_EQUALS(C_KZG_OK, fft_fr(data, poly, false, n, &s));
+
+    fr_t sample[n];
+    for (size_t i = 0; i < n; i++) {
+        if (i % 2 == 0) {
+            sample[i] = data[i];
+        } else {
+            sample[i] = FR_NULL;
+        }
+    }
+
+    fr_t recovered[n];
+    ASSERT_EQUALS(C_KZG_OK, recover_poly_from_samples_impl(recovered, sample, n, &s));
+
+    // Check recovered data
+    for (size_t i = 0; i < n; i++) {
+        ASSERT_EQUALS(true, fr_equal(&data[i], &recovered[i]));
+    }
+
+    // Also check against original coefficients
+    fr_t back[n];
+    ASSERT_EQUALS(C_KZG_OK, fft_fr(back, recovered, true, n, &s));
+    for (size_t i = 0; i < n / 2; i++) {
+        ASSERT_EQUALS(true, fr_equal(&poly[i], &back[i]));
+    }
+    for (size_t i = n / 2; i < n; i++) {
+        ASSERT_EQUALS(true, fr_is_zero(&back[i]));
+    }
+}
+
+static void test_reconstruct__full(void) {
+    fr_t poly[s.max_width];
+    for (size_t i = 0; i < s.max_width / 2; i++) {
+        fr_from_uint64(&poly[i], i);
+    }
+    for (size_t i = s.max_width / 2; i < s.max_width; i++) {
+        poly[i] = FR_ZERO;
+    }
+
+    fr_t data[s.max_width];
+    ASSERT_EQUALS(C_KZG_OK, fft_fr(data, poly, false, s.max_width, &s));
+
+    fr_t sample[s.max_width];
+    for (size_t i = 0; i < s.max_width; i++) {
+        if (i % 2 == 0) {
+            sample[i] = data[i];
+        } else {
+            sample[i] = FR_NULL;
+        }
+    }
+
+    fr_t recovered[s.max_width];
+    ASSERT_EQUALS(C_KZG_OK, recover_poly_from_samples_impl(recovered, sample, s.max_width, &s));
+
+    // Check recovered data
+    for (size_t i = 0; i < s.max_width; i++) {
+        ASSERT_EQUALS(true, fr_equal(&data[i], &recovered[i]));
+    }
+
+    // Also check against original coefficients
+    fr_t back[s.max_width];
+    ASSERT_EQUALS(C_KZG_OK, fft_fr(back, recovered, true, s.max_width, &s));
+    for (size_t i = 0; i < s.max_width / 2; i++) {
+        ASSERT_EQUALS(true, fr_equal(&poly[i], &back[i]));
+    }
+    for (size_t i = s.max_width / 2; i < s.max_width; i++) {
+        ASSERT_EQUALS(true, fr_is_zero(&back[i]));
+    }
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // Profiling Functions
@@ -2061,7 +2157,9 @@ int main(void) {
     RUN(test_expand_root_of_unity__fails_wrong_root_of_unity);
     // RUN(test_evaluate_polynomial_in_coefficient_form__simple);
     // RUN(test_fft_fr__simple);
-    // RUN(test_reconstruct__random_blob);
+    //RUN(test_reconstruct__random_blob);
+    RUN(test_reconstruct__half);
+    RUN(test_reconstruct__full);
 
     /*
      * These functions are only executed if we're profiling. To me, it makes
