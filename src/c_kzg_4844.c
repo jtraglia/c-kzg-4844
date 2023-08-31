@@ -2351,7 +2351,9 @@ C_KZG_RET recover_samples_impl(
     fr_t *eval_scaled_poly_with_zero = NULL;
     fr_t *eval_scaled_zero_poly = NULL;
     fr_t *scaled_reconstructed_poly = NULL;
+
     poly zero_poly;
+    zero_poly.coeffs = NULL;
 
     /* Allocate space for arrays */
     ret = c_kzg_calloc((void **)&missing, s->max_width, sizeof(uint64_t));
@@ -2473,6 +2475,7 @@ out:
     c_kzg_free(eval_scaled_poly_with_zero);
     c_kzg_free(eval_scaled_zero_poly);
     c_kzg_free(scaled_reconstructed_poly);
+    c_kzg_free(zero_poly.coeffs);
 
     return ret;
 }
@@ -2564,11 +2567,11 @@ C_KZG_RET get_samples(
      * roots of unity.
      */
     ret = blob_to_polynomial((Polynomial *)poly, blob);
-    if (ret != C_KZG_OK) return ret;
+    if (ret != C_KZG_OK) goto out;
 
     /* Get the samples via forward transformation */
     ret = fft_fr(samples_fr, poly, false, s->max_width, s);
-    if (ret != C_KZG_OK) return ret;
+    if (ret != C_KZG_OK) goto out;
 
     /* Convert all of the samples to byte-form */
     for (size_t i = 0; i < s->max_width; i++) {
@@ -2612,7 +2615,7 @@ C_KZG_RET samples_to_blob(
 
     /* Get the polynomial via inverse transformation */
     ret = fft_fr(poly, samples_fr, true, s->max_width, s);
-    if (ret != C_KZG_OK) return ret;
+    if (ret != C_KZG_OK) goto out;
 
     /* Convert the polynomial to a blob */
     Bytes32 *field = (Bytes32 *)blob->bytes;
