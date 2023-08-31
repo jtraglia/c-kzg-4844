@@ -2282,10 +2282,15 @@ out:
 ///////////////////////////////////////////////////////////////////////////////
 
 /**
- * Five is a primitive element, but actually this can be pretty much anything
- * not zero or a low-degree root of unity.
+ * Currently five. This is a primitive element, but actually this can be pretty
+ * much anything not zero or a low-degree root of unity.
  */
-#define SCALE_FACTOR 5
+static const fr_t SCALE_FACTOR = {
+    0x0000000afffffff5L, 0x66d9f3df00120c0bL,
+    0xcc83b7a7960bb7c5L, 0x04c9cf6d363b9de5L};
+static const fr_t INV_SCALE_FACTOR = {
+    0x0000000066666666L, 0x11b424cb999a419aL,
+    0x51e8dcc995bf4331L, 0x04d4237855c10116L};
 
 /**
  * Scale a polynomial in place.
@@ -2297,13 +2302,9 @@ out:
  * @param[in]       len_p   Length of the polynomial coefficients
  */
 static void scale_poly(fr_t *p, uint64_t len_p) {
-    fr_t scale_factor, factor_power, inv_factor;
-    fr_from_uint64(&scale_factor, SCALE_FACTOR);
-    blst_fr_inverse(&inv_factor, &scale_factor);
-    factor_power = FR_ONE;
-
+    fr_t factor_power = FR_ONE;
     for (uint64_t i = 1; i < len_p; i++) {
-        blst_fr_mul(&factor_power, &factor_power, &inv_factor);
+        blst_fr_mul(&factor_power, &factor_power, &INV_SCALE_FACTOR);
         blst_fr_mul(&p[i], &p[i], &factor_power);
     }
 }
@@ -2318,12 +2319,9 @@ static void scale_poly(fr_t *p, uint64_t len_p) {
  * @param[in]       len_p   Length of the polynomial coefficients
  */
 static void unscale_poly(fr_t *p, uint64_t len_p) {
-    fr_t scale_factor, factor_power;
-    fr_from_uint64(&scale_factor, SCALE_FACTOR);
-    factor_power = FR_ONE;
-
+    fr_t factor_power = FR_ONE;
     for (uint64_t i = 1; i < len_p; i++) {
-        blst_fr_mul(&factor_power, &factor_power, &scale_factor);
+        blst_fr_mul(&factor_power, &factor_power, &SCALE_FACTOR);
         blst_fr_mul(&p[i], &p[i], &factor_power);
     }
 }
