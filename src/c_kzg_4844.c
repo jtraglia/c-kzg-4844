@@ -238,34 +238,6 @@ static C_KZG_RET new_fr_array(fr_t **x, size_t n) {
 ///////////////////////////////////////////////////////////////////////////////
 
 /**
- * Test whether the operand is one in the finite field.
- *
- * @param[in] p The field element to be checked
- *
- * @retval true  The element is one
- * @retval false The element is not one
- */
-static bool fr_is_one(const fr_t *p) {
-    uint64_t a[4];
-    blst_uint64_from_fr(a, p);
-    return a[0] == 1 && a[1] == 0 && a[2] == 0 && a[3] == 0;
-}
-
-/**
- * Test whether the operand is zero in the finite field.
- *
- * @param[in] p The field element to be checked
- *
- * @retval true  The element is zero
- * @retval false The element is not zero
- */
-static bool fr_is_zero(const fr_t *p) {
-    uint64_t a[4];
-    blst_uint64_from_fr(a, p);
-    return a[0] == 0 && a[1] == 0 && a[2] == 0 && a[3] == 0;
-}
-
-/**
  * Test whether two field elements are equal.
  *
  * @param[in] aa The first element
@@ -279,6 +251,42 @@ static bool fr_equal(const fr_t *aa, const fr_t *bb) {
     blst_uint64_from_fr(a, aa);
     blst_uint64_from_fr(b, bb);
     return a[0] == b[0] && a[1] == b[1] && a[2] == b[2] && a[3] == b[3];
+}
+
+/**
+ * Test whether the operand is zero in the finite field.
+ *
+ * @param[in] p The field element to be checked
+ *
+ * @retval true  The element is zero
+ * @retval false The element is not zero
+ */
+static bool fr_is_zero(const fr_t *p) {
+    return fr_equal(p, &FR_ZERO);
+}
+
+/**
+ * Test whether the operand is one in the finite field.
+ *
+ * @param[in] p The field element to be checked
+ *
+ * @retval true  The element is one
+ * @retval false The element is not one
+ */
+static bool fr_is_one(const fr_t *p) {
+    return fr_equal(p, &FR_ONE);
+}
+
+/**
+ * Test whether the operand is null (all 0xff's).
+ *
+ * @param[in] p The field element to be checked
+ *
+ * @retval true  The element is null
+ * @retval false The element is not null
+ */
+static bool fr_is_null(const fr_t *p) {
+    return fr_equal(p, &FR_NULL);
 }
 
 /**
@@ -1893,10 +1901,7 @@ static void fft_fr_fast(
  * @param[in]  inverse `false` for forward transform, `true` for inverse
  * transform
  * @param[in]  n       Length of the FFT, must be a power of two
- * @param[in]  s      Pointer to previously initialised FFTSettings structure
- * with `max_width` at least @p n.
- * @retval C_CZK_OK      All is well
- * @retval C_CZK_BADARGS Invalid parameters were supplied
+ * @param[in]   s           The trusted setup
  */
 C_KZG_RET fft_fr(
     fr_t *out, const fr_t *in, bool inverse, uint64_t n, const KZGSettings *s
@@ -1941,10 +1946,7 @@ typedef struct {
  * @param[in]  indices     Array of missing indices of length @p len_indices
  * @param[in]  len_indices Length of the missing indices array, @p indices
  * @param[in]  stride      Stride length through the powers of the root of unity
- * @param[in]  s          The FFT settings previously initialised with
- * #new_fft_settings
- * @retval C_CZK_OK      All is well
- * @retval C_CZK_BADARGS Invalid parameters were supplied
+ * @param[in]   s           The trusted setup
  */
 static C_KZG_RET do_zero_poly_mul_partial(
     poly *dst,
@@ -1993,8 +1995,6 @@ static C_KZG_RET do_zero_poly_mul_partial(
  * @param[in]  out_len The length of the desired output data, @p out
  * @param[in]  p       The polynomial containing the data to be copied and
  * padded
- * @retval C_CZK_OK      All is well
- * @retval C_CZK_BADARGS Invalid parameters were supplied
  */
 static C_KZG_RET pad_p(fr_t *out, uint64_t out_len, const poly *p) {
     CHECK(out_len >= p->length);
@@ -2043,11 +2043,7 @@ uint64_t next_power_of_two(uint64_t v) {
  * @param[in]  len_scratch Length of @p scratch, at least 3 times @p len_out
  * @param[in]  partials    Array of polynomials to be multiplied together
  * @param[in]  partial_count The number of polynomials to be multiplied together
- * @param[in]  s          The FFT settings previously initialised with
- * #new_fft_settings
- * @retval C_CZK_OK      All is well
- * @retval C_CZK_BADARGS Invalid parameters were supplied
- * @retval C_CZK_ERROR   An internal error occurred
+ * @param[in]   s           The trusted setup
  */
 static C_KZG_RET reduce_partials(
     poly *out,
@@ -2140,12 +2136,7 @@ out:
  * @param[in]  missing_indices Array length @p len_missing containing the
  * indices of the missing coefficients
  * @param[in]  len_missing     Length of @p missing_indices
- * @param[in]  s        The FFT settings previously initialised with
- * #new_fft_settings
- * @retval C_CZK_OK      All is well
- * @retval C_CZK_BADARGS Invalid parameters were supplied
- * @retval C_CZK_ERROR   An internal error occurred
- * @retval C_CZK_MALLOC  Memory allocation failed
+ * @param[in]   s           The trusted setup
  *
  * @todo What is the performance impact of tuning `degree_of_partial` and
  * `reduction factor`?
@@ -2289,18 +2280,20 @@ out:
 // Sample Recovery
 ///////////////////////////////////////////////////////////////////////////////
 
-/** 5 is a primitive element, but actually this can be pretty much anything not
- * 0 or a low-degree root of unity */
+/**
+ * Five is a primitive element, but actually this can be pretty much anything
+ * not zero or a low-degree root of unity.
+ */
 #define SCALE_FACTOR 5
 
 /**
  * Scale a polynomial in place.
  *
- * Multiplies each coefficient by `1 / scale_factor ^ i`. Equivalent to creating
- * a polynomial that evaluates at `x * k` rather than `x`.
+ * Multiplies each coefficient by `1 / scale_factor ^ i`. Equivalent to
+ * creating a polynomial that evaluates at `x * k` rather than `x`.
  *
- * @param[out,in] p The polynomial coefficients to be scaled
- * @param[in] len_p Length of the polynomial coefficients
+ * @param[out,in]   p       The polynomial coefficients to be scaled
+ * @param[in]       len_p   Length of the polynomial coefficients
  */
 static void scale_poly(fr_t *p, uint64_t len_p) {
     fr_t scale_factor, factor_power, inv_factor;
@@ -2320,8 +2313,8 @@ static void scale_poly(fr_t *p, uint64_t len_p) {
  * Multiplies each coefficient by `scale_factor ^ i`. Equivalent to creating a
  * polynomial that evaluates at `x / k` rather than `x`.
  *
- * @param[out,in] p The polynomial coefficients to be unscaled
- * @param[in] len_p Length of the polynomial coefficients
+ * @param[out,in]   p       The polynomial coefficients to be unscaled
+ * @param[in]       len_p   Length of the polynomial coefficients
  */
 static void unscale_poly(fr_t *p, uint64_t len_p) {
     fr_t scale_factor, factor_power;
@@ -2332,13 +2325,6 @@ static void unscale_poly(fr_t *p, uint64_t len_p) {
         blst_fr_mul(&factor_power, &factor_power, &scale_factor);
         blst_fr_mul(&p[i], &p[i], &factor_power);
     }
-}
-
-bool fr_is_null(const fr_t *aa) {
-    uint64_t a[4], b[4];
-    blst_uint64_from_fr(a, aa);
-    blst_uint64_from_fr(b, &FR_NULL);
-    return a[0] == b[0] && a[1] == b[1] && a[2] == b[2] && a[3] == b[3];
 }
 
 /**
@@ -2355,12 +2341,7 @@ bool fr_is_null(const fr_t *aa) {
  * data
  * @param[in]  samples            The data to be reconstructed, with `fr_null`
  * set for missing values
- * @param[in]  s                 The FFT settings previously initialised with
- * #new_fft_settings
- * @retval C_CZK_OK      All is well
- * @retval C_CZK_BADARGS Invalid parameters were supplied
- * @retval C_CZK_ERROR   An internal error occurred
- * @retval C_CZK_MALLOC  Memory allocation failed
+ * @param[in]   s           The trusted setup
  */
 C_KZG_RET recover_samples_impl(
     fr_t *reconstructed_data,
