@@ -1933,6 +1933,41 @@ typedef struct {
 } poly;
 
 /**
+ * Get the minimum of two unsigned integers.
+ *
+ * @param[in]   a   An unsigned integer
+ * @param[in]   b   An unsigned integer
+ *
+ * @return Whichever value is smaller.
+ */
+static inline uint64_t min(uint64_t a, uint64_t b) {
+    return a < b ? a : b;
+}
+
+/**
+ * Return the next highest power of two.
+ *
+ * @param[in]   v   A 64-bit unsigned integer <= 2^31
+ * @return The lowest power of two equal or larger than @p v
+ *
+ * @remark If @p v is already a power of two, it is returned as-is.
+ */
+static inline uint64_t next_power_of_two(uint64_t v) {
+    if (v == 0) return 1;
+
+    v--;
+    v |= v >> 1;
+    v |= v >> 2;
+    v |= v >> 4;
+    v |= v >> 8;
+    v |= v >> 16;
+    v |= v >> 32;
+    v++;
+
+    return v;
+}
+
+/**
  * Calculates the minimal polynomial that evaluates to zero for powers of roots
  * of unity at the given indices.
  *
@@ -2008,29 +2043,6 @@ static C_KZG_RET pad_p(fr_t *out, uint64_t out_len, const poly *p) {
 }
 
 /**
- * Return the next highest power of two.
- *
- * If @p v is already a power of two, it is returned as-is.
- *
- * Adapted from
- * https://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2
- *
- * @param[in] v A 64-bit unsigned integer <= 2^31
- * @return      The lowest power of two equal or larger than @p v
- */
-uint64_t next_power_of_two(uint64_t v) {
-    v--;
-    v |= v >> 1;
-    v |= v >> 2;
-    v |= v >> 4;
-    v |= v >> 8;
-    v |= v >> 16;
-    v |= v >> 32;
-    v++;
-    return v += (v == 0);
-}
-
-/**
  * Calculate the product of the input polynomials via convolution.
  *
  * Pad the polynomials in @p ps, perform FFTs, point-wise multiply the results
@@ -2099,17 +2111,6 @@ out:
     return ret;
 }
 
-/** @def min_u64
- *
- * Safely find the minimum of two uint_64s.
- */
-#define min_u64(a, b) \
-    ({ \
-        uint64_t _a = (a); \
-        uint64_t _b = (b); \
-        _a < _b ? _a : _b; \
-    })
-
 /**
  * Calculate the minimal polynomial that evaluates to zero for powers of roots
  * of unity that correspond to missing indices.
@@ -2168,7 +2169,7 @@ C_KZG_RET zero_polynomial_via_multiplication(
     uint64_t domain_stride = s->max_width / length;
     uint64_t partial_count = (len_missing + missing_per_partial - 1) /
                              missing_per_partial;
-    uint64_t n = min_u64(
+    uint64_t n = min(
         next_power_of_two(partial_count * degree_of_partial), length
     );
 
@@ -2199,7 +2200,7 @@ C_KZG_RET zero_polynomial_via_multiplication(
 
         uint64_t offset = 0, out_offset = 0, max = len_missing;
         for (size_t i = 0; i < partial_count; i++) {
-            uint64_t end = min_u64(offset + missing_per_partial, max);
+            uint64_t end = min(offset + missing_per_partial, max);
             partials[i].coeffs = &work[out_offset];
             partials[i].length = degree_of_partial;
             do_zero_poly_mul_partial(
@@ -2231,13 +2232,13 @@ C_KZG_RET zero_polynomial_via_multiplication(
             uint64_t partial_size = next_power_of_two(partials[0].length);
             for (uint64_t i = 0; i < reduced_count; i++) {
                 uint64_t start = i * reduction_factor;
-                uint64_t out_end = min_u64(
+                uint64_t out_end = min(
                     (start + reduction_factor) * partial_size, n
                 );
-                uint64_t reduced_len = min_u64(
+                uint64_t reduced_len = min(
                     out_end - start * partial_size, length
                 );
-                uint64_t partials_num = min_u64(
+                uint64_t partials_num = min(
                     reduction_factor, partial_count - start
                 );
                 partials[i].coeffs = work + start * partial_size;
@@ -2344,9 +2345,7 @@ static void unscale_poly(fr_t *p, uint64_t len_p) {
  * @param[in]   s           The trusted setup
  */
 C_KZG_RET recover_samples_impl(
-    fr_t *reconstructed_data,
-    fr_t *samples,
-    const KZGSettings *s
+    fr_t *reconstructed_data, fr_t *samples, const KZGSettings *s
 ) {
     C_KZG_RET ret;
     uint64_t *missing = NULL;
@@ -2362,7 +2361,7 @@ C_KZG_RET recover_samples_impl(
         }
     }
 
-    // Make scratch areas, each of size s->max_width. Cuts space required by 57%.
+    // Make scratch areas. Cuts space required by 57%.
 
     ret = new_fr_array(&scratch, 3 * s->max_width);
     if (ret != C_KZG_OK) goto out;
@@ -2416,7 +2415,11 @@ C_KZG_RET recover_samples_impl(
 
     // Polynomial division by convolution: Q3 = Q1 / Q2
     ret = fft_fr(
-        eval_scaled_poly_with_zero, scaled_poly_with_zero, false, s->max_width, s
+        eval_scaled_poly_with_zero,
+        scaled_poly_with_zero,
+        false,
+        s->max_width,
+        s
     );
     if (ret != C_KZG_OK) goto out;
 
@@ -2452,7 +2455,9 @@ C_KZG_RET recover_samples_impl(
     fr_t *reconstructed_poly = scaled_reconstructed_poly; // Renaming
 
     // The evaluation polynomial for D(x) is the reconstructed data:
-    ret = fft_fr(reconstructed_data, reconstructed_poly, false, s->max_width, s);
+    ret = fft_fr(
+        reconstructed_data, reconstructed_poly, false, s->max_width, s
+    );
     if (ret != C_KZG_OK) goto out;
 
 out:
