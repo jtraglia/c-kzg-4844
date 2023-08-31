@@ -1754,45 +1754,41 @@ static void test_reconstruct__random_blob(void) {
     Blob blob;
     size_t n = s.max_width;
     Bytes32 *samples = NULL;
-    Bytes32 *partial_samples = NULL;
-    Bytes32 *reconstructed_samples = NULL;
+    Bytes32 *partial = NULL;
+    Bytes32 *recovered = NULL;
     int diff;
 
     /* Allocate arrays */
     ret = c_kzg_calloc((void **)&samples, n, sizeof(Bytes32));
     ASSERT_EQUALS(ret, C_KZG_OK);
-    ret = c_kzg_calloc((void **)&partial_samples, n, sizeof(Bytes32));
+    ret = c_kzg_calloc((void **)&partial, n, sizeof(Bytes32));
     ASSERT_EQUALS(ret, C_KZG_OK);
-    ret = c_kzg_calloc((void **)&reconstructed_samples, n, sizeof(Bytes32));
+    ret = c_kzg_calloc((void **)&recovered, n, sizeof(Bytes32));
     ASSERT_EQUALS(ret, C_KZG_OK);
 
     /* Get a random blob */
     get_rand_blob(&blob);
 
     /* Get the samples */
-    ret = sample(samples, &blob, &s);
+    ret = get_samples(samples, &blob, &s);
     ASSERT_EQUALS(ret, C_KZG_OK);
 
     /* Erase half of the samples */
     for (size_t i = 0; i < s.max_width; i++) {
         if (i % 2 == 0) {
-            partial_samples[i] = samples[i];
+            partial[i] = samples[i];
         } else {
             /* To mark as missing, set all bits */
-            memset(&partial_samples[i].bytes, 0xff, 32);
+            memset(&partial[i].bytes, 0xff, 32);
         }
     }
 
     /* Reconstruct with half of the samples */
-    ret = recover_poly_from_samples(
-        reconstructed_samples, partial_samples, n, &s
-    );
+    ret = recover_samples(recovered, partial, &s);
     ASSERT_EQUALS(ret, C_KZG_OK);
 
     for (size_t i = 0; i < n; i++) {
-        diff = memcmp(
-            samples[i].bytes, reconstructed_samples[i].bytes, sizeof(Bytes32)
-        );
+        diff = memcmp(samples[i].bytes, recovered[i].bytes, sizeof(Bytes32));
         ASSERT_EQUALS(diff, 0);
     }
 }

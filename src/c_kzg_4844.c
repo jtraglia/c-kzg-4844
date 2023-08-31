@@ -2364,7 +2364,7 @@ bool fr_is_null(const fr_t *aa) {
  * @retval C_CZK_ERROR   An internal error occurred
  * @retval C_CZK_MALLOC  Memory allocation failed
  */
-C_KZG_RET recover_poly_from_samples_impl(
+C_KZG_RET recover_samples_impl(
     fr_t *reconstructed_data,
     fr_t *samples,
     uint64_t len_samples,
@@ -2515,43 +2515,36 @@ out:
 
 /**
  */
-C_KZG_RET recover_poly_from_samples(
-    Bytes32 *reconstructed_data_bytes,
-    Bytes32 *samples_bytes,
-    uint64_t len_samples,
-    KZGSettings *s
+C_KZG_RET recover_samples(
+    Bytes32 *recovered, Bytes32 *samples, KZGSettings *s
 ) {
     C_KZG_RET ret;
-    fr_t *reconstructed_data_fr = NULL;
+    fr_t *recovered_fr = NULL;
     fr_t *samples_fr = NULL;
 
-    ret = new_fr_array(&reconstructed_data_fr, FIELD_ELEMENTS_PER_BLOB);
+    ret = new_fr_array(&recovered_fr, s->max_width);
     if (ret != C_KZG_OK) goto out;
-    ret = new_fr_array(&samples_fr, len_samples);
+    ret = new_fr_array(&samples_fr, s->max_width);
     if (ret != C_KZG_OK) goto out;
 
-    for (size_t i = 0; i < len_samples; i++) {
-        if (!memcmp(&samples_bytes[i].bytes, &FR_NULL, 32)) {
+    for (size_t i = 0; i < s->max_width; i++) {
+        if (!memcmp(&samples[i].bytes, &FR_NULL, 32)) {
             samples_fr[i] = FR_NULL;
         } else {
-            ret = bytes_to_bls_field(&samples_fr[i], &samples_bytes[i]);
+            ret = bytes_to_bls_field(&samples_fr[i], &samples[i]);
             if (ret != C_KZG_OK) goto out;
         }
     }
 
-    ret = recover_poly_from_samples_impl(
-        reconstructed_data_fr, samples_fr, len_samples, s
-    );
+    ret = recover_samples_impl(recovered_fr, samples_fr, s->max_width, s);
     if (ret != C_KZG_OK) goto out;
 
-    for (size_t i = 0; i < len_samples; i++) {
-        bytes_from_bls_field(
-            &reconstructed_data_bytes[i], &reconstructed_data_fr[i]
-        );
+    for (size_t i = 0; i < s->max_width; i++) {
+        bytes_from_bls_field(&recovered[i], &recovered_fr[i]);
     }
 
 out:
-    c_kzg_free(reconstructed_data_fr);
+    c_kzg_free(recovered_fr);
     c_kzg_free(samples_fr);
     return ret;
 }
@@ -2560,7 +2553,9 @@ out:
  * The number of samples is 2n where n=FIELD_ELEMENTS_PER_BLOB.
  * The inputs are the expanded roots of unity.
  */
-C_KZG_RET sample(Bytes32 *samples, const Blob *blob, const KZGSettings *s) {
+C_KZG_RET get_samples(
+    Bytes32 *samples, const Blob *blob, const KZGSettings *s
+) {
     C_KZG_RET ret;
     fr_t *poly = NULL;
     fr_t *samples_fr = NULL;

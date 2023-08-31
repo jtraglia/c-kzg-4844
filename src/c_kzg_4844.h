@@ -235,6 +235,10 @@ C_KZG_RET VERIFY_BLOB_KZG_PROOF_BATCH(
     const KZGSettings *s
 );
 
+C_KZG_RET get_samples(Bytes32 *samples, const Blob *blob, const KZGSettings *s);
+
+C_KZG_RET recover_samples(Bytes32 *recovered, Bytes32 *samples, KZGSettings *s);
+
 #ifdef __cplusplus
 }
 #endif

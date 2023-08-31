@@ -340,3 +340,46 @@ func VerifyBlobKZGProofBatch(blobs []Blob, commitmentsBytes, proofsBytes []Bytes
 		&settings)
 	return bool(result), makeErrorFromRet(ret)
 }
+
+/*
+GetSamples is the binding for:
+
+	C_KZG_RET get_samples(
+	    Bytes32 *samples,
+	    const Blob *blob,
+	    const KZGSettings *s);
+*/
+func GetSamples(blob Blob) ([]Bytes32, error) {
+	if !loaded {
+		panic("trusted setup isn't loaded")
+	}
+	samples := make([]Bytes32, FieldElementsPerBlob*2)
+	ret := C.get_samples(
+		*(**C.Bytes32)(unsafe.Pointer(&samples)),
+		(*C.Blob)(unsafe.Pointer(&blob)),
+		&settings)
+	return samples, makeErrorFromRet(ret)
+}
+
+/*
+RecoverSamples is the binding for:
+
+	C_KZG_RET recover_samples(
+	    Bytes32 *recovered,
+	    Bytes32 *samples,
+	    KZGSettings *s);
+*/
+func RecoverSamples(samples []Bytes32) ([]Bytes32, error) {
+	if !loaded {
+		panic("trusted setup isn't loaded")
+	}
+	recovered := make([]Bytes32, FieldElementsPerBlob*2)
+	if len(samples) != len(recovered) {
+		return recovered, ErrBadArgs
+	}
+	ret := C.recover_samples(
+		*(**C.Bytes32)(unsafe.Pointer(&recovered)),
+		*(**C.Bytes32)(unsafe.Pointer(&samples)),
+		&settings)
+	return samples, makeErrorFromRet(ret)
+}
