@@ -1894,14 +1894,15 @@ static void fft_fr_fast(
 }
 
 /**
- * The entry point for forward and reverse FFTs over the finite field.
+ * The entry point for forward FFTs over the finite field.
  *
- * @param[out] out     The results (array of length @p n)
- * @param[in]  in      The input data (array of length @p n)
- * @param[in]  inverse `false` for forward transform, `true` for inverse
- * transform
- * @param[in]  n       Length of the FFT, must be a power of two
- * @param[in]   s           The trusted setup
+ * @param[out]  out     The results (array of length n)
+ * @param[in]   in      The input data (array of length n)
+ * @param[in]   n       Length of the arrays
+ * @param[in]   s       The trusted setup
+ *
+ * @remark The array lengths must be a power of two.
+ * @remark Use ifft_fr for inverse transformation.
  */
 static C_KZG_RET fft_fr(
     fr_t *out, const fr_t *in, size_t n, const KZGSettings *s
@@ -1915,6 +1916,17 @@ static C_KZG_RET fft_fr(
     return C_KZG_OK;
 }
 
+/**
+ * The entry point for inverse FFTs over the finite field.
+ *
+ * @param[out]  out     The results (array of length n)
+ * @param[in]   in      The input data (array of length n)
+ * @param[in]   n       Length of the arrays
+ * @param[in]   s       The trusted setup
+ *
+ * @remark The array lengths must be a power of two.
+ * @remark Use fft_fr for forward transformation.
+ */
 static C_KZG_RET ifft_fr(
     fr_t *out, const fr_t *in, size_t n, const KZGSettings *s
 ) {
