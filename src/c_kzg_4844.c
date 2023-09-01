@@ -1984,39 +1984,40 @@ static inline uint64_t next_power_of_two(uint64_t v) {
  * @param[in]   s           The trusted setup
  */
 static C_KZG_RET do_zero_poly_mul_partial(
-    poly *dst,
+    fr_t *dst,
+    size_t *dst_len,
     const uint64_t *indices,
     uint64_t len_indices,
     uint64_t stride,
     const KZGSettings *s
 ) {
-
-    CHECK(len_indices > 0);
-    CHECK(dst->length >= len_indices + 1);
+    if (len_indices == 0) {
+        return C_KZG_BADARGS;
+    }
 
     blst_fr_cneg(
-        &dst->coeffs[0], &s->expanded_roots_of_unity[indices[0] * stride], true
+        &dst[0], &s->expanded_roots_of_unity[indices[0] * stride], true
     );
 
-    for (uint64_t i = 1; i < len_indices; i++) {
+    for (size_t i = 1; i < len_indices; i++) {
         fr_t neg_di;
         blst_fr_cneg(
             &neg_di, &s->expanded_roots_of_unity[indices[i] * stride], true
         );
-        dst->coeffs[i] = neg_di;
-        blst_fr_add(&dst->coeffs[i], &dst->coeffs[i], &dst->coeffs[i - 1]);
-        for (uint64_t j = i - 1; j > 0; j--) {
-            blst_fr_mul(&dst->coeffs[j], &dst->coeffs[j], &neg_di);
-            blst_fr_add(&dst->coeffs[j], &dst->coeffs[j], &dst->coeffs[j - 1]);
+        dst[i] = neg_di;
+        blst_fr_add(&dst[i], &dst[i], &dst[i - 1]);
+        for (size_t j = i - 1; j > 0; j--) {
+            blst_fr_mul(&dst[j], &dst[j], &neg_di);
+            blst_fr_add(&dst[j], &dst[j], &dst[j - 1]);
         }
-        blst_fr_mul(&dst->coeffs[0], &dst->coeffs[0], &neg_di);
+        blst_fr_mul(&dst[0], &dst[0], &neg_di);
     }
 
-    dst->coeffs[len_indices] = FR_ONE;
-    for (uint64_t i = len_indices + 1; i < dst->length; i++) {
-        dst->coeffs[i] = FR_ZERO;
+    dst[len_indices] = FR_ONE;
+    for (size_t i = len_indices + 1; i < *dst_len; i++) {
+        dst[i] = FR_ZERO;
     }
-    dst->length = len_indices + 1;
+    *dst_len = len_indices + 1;
 
     return C_KZG_OK;
 }
@@ -2175,7 +2176,7 @@ C_KZG_RET zero_polynomial_via_multiplication(
 
     if (len_missing <= missing_per_partial) {
         ret = do_zero_poly_mul_partial(
-            zero_poly, missing_indices, len_missing, domain_stride, s
+            zero_poly->coeffs, &zero_poly->length, missing_indices, len_missing, domain_stride, s
         );
         if (ret != C_KZG_OK) goto out;
         ret = fft_fr(zero_eval, zero_poly->coeffs, false, length, s);
@@ -2204,7 +2205,8 @@ C_KZG_RET zero_polynomial_via_multiplication(
             partials[i].coeffs = &work[out_offset];
             partials[i].length = degree_of_partial;
             do_zero_poly_mul_partial(
-                &partials[i],
+                partials[i].coeffs,
+                &partials[i].length,
                 &missing_indices[offset],
                 end - offset,
                 domain_stride,
