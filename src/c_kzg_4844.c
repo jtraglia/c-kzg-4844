@@ -1869,19 +1869,19 @@ C_KZG_RET LOAD_TRUSTED_SETUP_FILE(KZGSettings *out, FILE *in) {
 static void fft_fr_fast(
     fr_t *out,
     const fr_t *in,
-    uint64_t stride,
+    size_t stride,
     const fr_t *roots,
-    uint64_t roots_stride,
-    uint64_t n
+    size_t roots_stride,
+    size_t n
 ) {
-    uint64_t half = n / 2;
+    size_t half = n / 2;
     if (half > 0) { // Tunable parameter
+        fr_t y_times_root;
         fft_fr_fast(out, in, stride * 2, roots, roots_stride * 2, half);
         fft_fr_fast(
             out + half, in + stride, stride * 2, roots, roots_stride * 2, half
         );
-        for (uint64_t i = 0; i < half; i++) {
-            fr_t y_times_root;
+        for (size_t i = 0; i < half; i++) {
             blst_fr_mul(
                 &y_times_root, &out[i + half], &roots[i * roots_stride]
             );
@@ -1894,7 +1894,7 @@ static void fft_fr_fast(
 }
 
 /**
- * The main entry point for forward and reverse FFTs over the finite field.
+ * The entry point for forward and reverse FFTs over the finite field.
  *
  * @param[out] out     The results (array of length @p n)
  * @param[in]  in      The input data (array of length @p n)
@@ -1903,22 +1903,32 @@ static void fft_fr_fast(
  * @param[in]  n       Length of the FFT, must be a power of two
  * @param[in]   s           The trusted setup
  */
-C_KZG_RET fft_fr(
-    fr_t *out, const fr_t *in, bool inverse, uint64_t n, const KZGSettings *s
+static C_KZG_RET fft_fr(
+    fr_t *out, const fr_t *in, size_t n, const KZGSettings *s
 ) {
-    uint64_t stride = s->max_width / n;
     CHECK(n <= s->max_width);
     CHECK(is_power_of_two(n));
-    if (inverse) {
-        fr_t inv_len;
-        fr_from_uint64(&inv_len, n);
-        blst_fr_inverse(&inv_len, &inv_len);
-        fft_fr_fast(out, in, 1, s->reverse_roots_of_unity, stride, n);
-        for (uint64_t i = 0; i < n; i++) {
-            blst_fr_mul(&out[i], &out[i], &inv_len);
-        }
-    } else {
-        fft_fr_fast(out, in, 1, s->expanded_roots_of_unity, stride, n);
+
+    size_t stride = s->max_width / n;
+    fft_fr_fast(out, in, 1, s->expanded_roots_of_unity, stride, n);
+
+    return C_KZG_OK;
+}
+
+static C_KZG_RET ifft_fr(
+    fr_t *out, const fr_t *in, size_t n, const KZGSettings *s
+) {
+    CHECK(n <= s->max_width);
+    CHECK(is_power_of_two(n));
+
+    size_t stride = s->max_width / n;
+    fft_fr_fast(out, in, 1, s->reverse_roots_of_unity, stride, n);
+
+    fr_t inv_len;
+    fr_from_uint64(&inv_len, n);
+    blst_fr_inverse(&inv_len, &inv_len);
+    for (size_t i = 0; i < n; i++) {
+        blst_fr_mul(&out[i], &out[i], &inv_len);
     }
     return C_KZG_OK;
 }
@@ -2033,15 +2043,21 @@ static C_KZG_RET do_zero_poly_mul_partial(
 static C_KZG_RET pad_p(
     fr_t *out, size_t out_len, const fr_t *in, size_t in_len
 ) {
+    /* Ensure out is big enough */
     if (out_len < in_len) {
         return C_KZG_BADARGS;
     }
+
+    /* Copy polynomial fields */
     for (size_t i = 0; i < in_len; i++) {
         out[i] = in[i];
     }
+
+    /* Set remaining fields to zero */
     for (size_t i = in_len; i < out_len; i++) {
         out[i] = FR_ZERO;
     }
+
     return C_KZG_OK;
 }
 
@@ -2097,7 +2113,7 @@ static C_KZG_RET reduce_partials(
         partials[partial_count - 1].length
     );
     if (ret != C_KZG_OK) goto out;
-    ret = fft_fr(mul_eval_ps, p_padded, false, len_out, s);
+    ret = fft_fr(mul_eval_ps, p_padded, len_out, s);
     if (ret != C_KZG_OK) goto out;
 
     for (uint64_t i = 0; i < partial_count - 1; i++) {
@@ -2105,14 +2121,14 @@ static C_KZG_RET reduce_partials(
             p_padded, partials[i].length, partials[i].coeffs, partials[i].length
         );
         if (ret != C_KZG_OK) goto out;
-        ret = fft_fr(p_eval, p_padded, false, len_out, s);
+        ret = fft_fr(p_eval, p_padded, len_out, s);
         if (ret != C_KZG_OK) goto out;
         for (uint64_t j = 0; j < len_out; j++) {
             blst_fr_mul(&mul_eval_ps[j], &mul_eval_ps[j], &p_eval[j]);
         }
     }
 
-    ret = fft_fr(out->coeffs, mul_eval_ps, true, len_out, s);
+    ret = ifft_fr(out->coeffs, mul_eval_ps, len_out, s);
     if (ret != C_KZG_OK) goto out;
 
     out->length = out_degree + 1;
@@ -2152,7 +2168,7 @@ out:
  * @todo What is the performance impact of tuning `degree_of_partial` and
  * `reduction factor`?
  */
-C_KZG_RET zero_polynomial_via_multiplication(
+static C_KZG_RET zero_polynomial_via_multiplication(
     fr_t *zero_eval,
     poly *zero_poly,
     uint64_t length,
@@ -2193,7 +2209,7 @@ C_KZG_RET zero_polynomial_via_multiplication(
             s
         );
         if (ret != C_KZG_OK) goto out;
-        ret = fft_fr(zero_eval, zero_poly->coeffs, false, length, s);
+        ret = fft_fr(zero_eval, zero_poly->coeffs, length, s);
         if (ret != C_KZG_OK) goto out;
     } else {
 
@@ -2281,7 +2297,7 @@ C_KZG_RET zero_polynomial_via_multiplication(
             zero_poly->coeffs, length, partials[0].coeffs, partials[0].length
         );
         if (ret != C_KZG_OK) goto out;
-        ret = fft_fr(zero_eval, zero_poly->coeffs, false, length, s);
+        ret = fft_fr(zero_eval, zero_poly->coeffs, length, s);
         if (ret != C_KZG_OK) goto out;
 
         zero_poly->length = partials[0].length;
@@ -2360,7 +2376,7 @@ static void unscale_poly(fr_t *p, uint64_t len_p) {
  * @remark The array of samples must be 2n length and in the correct order.
  * @remark Missing samples should be equal to FR_NULL.
  */
-C_KZG_RET recover_samples_impl(
+static C_KZG_RET recover_samples_impl(
     fr_t *recovered, fr_t *samples, const KZGSettings *s
 ) {
     C_KZG_RET ret;
@@ -2428,9 +2444,7 @@ C_KZG_RET recover_samples_impl(
     }
 
     // Now inverse FFT so that poly_with_zero is (E * Z_r,I)(x) = (D * Z_r,I)(x)
-    ret = fft_fr(
-        poly_with_zero, poly_evaluations_with_zero, true, s->max_width, s
-    );
+    ret = ifft_fr(poly_with_zero, poly_evaluations_with_zero, s->max_width, s);
     if (ret != C_KZG_OK) goto out;
 
     // x -> k * x
@@ -2444,17 +2458,11 @@ C_KZG_RET recover_samples_impl(
 
     // Polynomial division by convolution: Q3 = Q1 / Q2
     ret = fft_fr(
-        eval_scaled_poly_with_zero,
-        scaled_poly_with_zero,
-        false,
-        s->max_width,
-        s
+        eval_scaled_poly_with_zero, scaled_poly_with_zero, s->max_width, s
     );
     if (ret != C_KZG_OK) goto out;
 
-    ret = fft_fr(
-        eval_scaled_zero_poly, scaled_zero_poly, false, s->max_width, s
-    );
+    ret = fft_fr(eval_scaled_zero_poly, scaled_zero_poly, s->max_width, s);
     if (ret != C_KZG_OK) goto out;
 
     fr_t *eval_scaled_reconstructed_poly = eval_scaled_poly_with_zero;
@@ -2467,10 +2475,9 @@ C_KZG_RET recover_samples_impl(
     }
 
     // The result of the division is D(k * x):
-    ret = fft_fr(
+    ret = ifft_fr(
         scaled_reconstructed_poly,
         eval_scaled_reconstructed_poly,
-        true,
         s->max_width,
         s
     );
@@ -2484,7 +2491,7 @@ C_KZG_RET recover_samples_impl(
     fr_t *reconstructed_poly = scaled_reconstructed_poly; // Renaming
 
     // The evaluation polynomial for D(x) is the reconstructed data:
-    ret = fft_fr(recovered, reconstructed_poly, false, s->max_width, s);
+    ret = fft_fr(recovered, reconstructed_poly, s->max_width, s);
     if (ret != C_KZG_OK) goto out;
 
 out:
@@ -2590,7 +2597,7 @@ C_KZG_RET get_samples(
     if (ret != C_KZG_OK) goto out;
 
     /* Get the samples via forward transformation */
-    ret = fft_fr(samples_fr, poly, false, s->max_width, s);
+    ret = fft_fr(samples_fr, poly, s->max_width, s);
     if (ret != C_KZG_OK) goto out;
 
     /* Convert all of the samples to byte-form */
@@ -2634,7 +2641,7 @@ C_KZG_RET samples_to_blob(
     }
 
     /* Get the polynomial via inverse transformation */
-    ret = fft_fr(poly, samples_fr, true, s->max_width, s);
+    ret = ifft_fr(poly, samples_fr, s->max_width, s);
     if (ret != C_KZG_OK) goto out;
 
     /* Convert the polynomial to a blob */
