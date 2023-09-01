@@ -406,3 +406,36 @@ func SamplesToBlob(samples []Bytes32) (Blob, error) {
 		&settings)
 	return blob, makeErrorFromRet(ret)
 }
+
+func GetRootOfUnityAt(index int) (Bytes32, error) {
+	if !loaded {
+		panic("trusted setup isn't loaded")
+	}
+	root := Bytes32{}
+	if index < 0 || index > int(settings.max_width) {
+		return root, ErrBadArgs
+	}
+	C.bytes_from_bls_field(
+		(*C.Bytes32)(unsafe.Pointer(&root)),
+		(*C.fr_t)(unsafe.Pointer(uintptr(unsafe.Pointer(settings.expanded_roots_of_unity))+uintptr(32*index))))
+	return root, nil
+}
+
+func EvalAt(index int) (Bytes32, error) {
+	if !loaded {
+		panic("trusted setup isn't loaded")
+	}
+	eval := Bytes32{}
+	if index < 0 || index > int(settings.max_width) {
+		return eval, ErrBadArgs
+	}
+	root, err := GetRootOfUnityAt(index)
+	if err != nil {
+		return eval, ErrBadArgs
+	}
+
+	C.bytes_from_bls_field(
+		(*C.Bytes32)(unsafe.Pointer(&root)),
+		(*C.fr_t)(unsafe.Pointer(uintptr(unsafe.Pointer(settings.expanded_roots_of_unity))+uintptr(32*index))))
+	return root, nil
+}

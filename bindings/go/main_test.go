@@ -387,6 +387,32 @@ func TestVerifyBlobKZGProofBatch(t *testing.T) {
 	}
 }
 
+func TestSampleProof(t *testing.T) {
+	blob := getRandBlob(0)
+
+	commitment, err := BlobToKZGCommitment(blob)
+	require.NoError(t, err)
+
+	samples, err := GetSamples(blob)
+	require.NoError(t, err)
+
+	for i, sample := range samples {
+		x, err := GetRootOfUnityAt(i)
+		require.NoError(t, err)
+		proof, y, err := ComputeKZGProof(blob, x)
+		require.NoError(t, err)
+		require.NotNil(t, y)
+
+		t.Log(y)
+		t.Log(sample)
+		t.Log(x)
+
+		ok, err := VerifyKZGProof(Bytes48(commitment), x, sample, Bytes48(proof))
+		require.NoError(t, err)
+		require.True(t, ok)
+	}
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Benchmarks
 ///////////////////////////////////////////////////////////////////////////////

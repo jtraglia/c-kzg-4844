@@ -1894,7 +1894,7 @@ static void fft_fr_fast(
 }
 
 /**
- * The entry point for forward FFTs over the finite field.
+ * The entry point for forward FFT over field elements.
  *
  * @param[out]  out     The results (array of length n)
  * @param[in]   in      The input data (array of length n)
@@ -1917,12 +1917,12 @@ static C_KZG_RET fft_fr(
 }
 
 /**
- * The entry point for inverse FFTs over the finite field.
+ * The entry point for inverse FFT over field elements.
  *
- * @param[out]  out     The results (array of length n)
- * @param[in]   in      The input data (array of length n)
- * @param[in]   n       Length of the arrays
- * @param[in]   s       The trusted setup
+ * @param[out]  out The results (array of length n)
+ * @param[in]   in  The input data (array of length n)
+ * @param[in]   n   Length of the arrays
+ * @param[in]   s   The trusted setup
  *
  * @remark The array lengths must be a power of two.
  * @remark Use fft_fr for forward transformation.
@@ -1942,6 +1942,102 @@ static C_KZG_RET ifft_fr(
     for (size_t i = 0; i < n; i++) {
         blst_fr_mul(&out[i], &out[i], &inv_len);
     }
+    return C_KZG_OK;
+}
+
+/**
+ * Fast Fourier Transform.
+ *
+ * Recursively divide and conquer.
+ *
+ * @param[out] out          The results (array of length @p n)
+ * @param[in]  in           The input data (array of length @p n * @p stride)
+ * @param[in]  stride       The input data stride
+ * @param[in]  roots        Roots of unity
+ *                          (array of length @p n * @p roots_stride)
+ * @param[in]  roots_stride The stride interval among the roots of unity
+ * @param[in]  n            Length of the FFT, must be a power of two
+ */
+static void fft_g1_fast(
+    g1_t *out,
+    const g1_t *in,
+    uint64_t stride,
+    const fr_t *roots,
+    uint64_t roots_stride,
+    uint64_t n
+) {
+    uint64_t half = n / 2;
+    if (half > 0) { /* Tunable parameter */
+        fft_g1_fast(out, in, stride * 2, roots, roots_stride * 2, half);
+        fft_g1_fast(
+            out + half, in + stride, stride * 2, roots, roots_stride * 2, half
+        );
+        for (uint64_t i = 0; i < half; i++) {
+            g1_t y_times_root;
+            if (fr_is_one(&roots[i * roots_stride])) {
+                /* Don't do the scalar multiplication if the scalar is one */
+                y_times_root = out[i + half];
+            } else {
+                g1_mul(&y_times_root, &out[i + half], &roots[i * roots_stride]);
+            }
+            g1_sub(&out[i + half], &out[i], &y_times_root);
+            blst_p1_add_or_double(&out[i], &out[i], &y_times_root);
+        }
+    } else {
+        *out = *in;
+    }
+}
+
+/**
+ * The entry point for forward FFT over G1 points.
+ *
+ * @param[out]  out The results (array of length n)
+ * @param[in]   in  The input data (array of length n)
+ * @param[in]   n   Length of the arrays
+ * @param[in]   s   The trusted setup
+ *
+ * @remark The array lengths must be a power of two.
+ * @remark Use ifft_g1 for inverse transformation.
+ */
+C_KZG_RET fft_g1(
+    g1_t *out, const g1_t *in, size_t n, const KZGSettings *s
+) {
+    CHECK(n <= s->max_width);
+    CHECK(is_power_of_two(n));
+
+    uint64_t stride = s->max_width / n;
+    fft_g1_fast(out, in, 1, s->expanded_roots_of_unity, stride, n);
+
+    return C_KZG_OK;
+}
+
+/**
+ * The entry point for inverse FFT over G1 points.
+ *
+ * @param[out]  out The results (array of length n)
+ * @param[in]   in  The input data (array of length n)
+ * @param[in]   n   Length of the arrays
+ * @param[in]   s   The trusted setup
+ *
+ * @remark The array lengths must be a power of two.
+ * @remark Use fft_g1 for forward transformation.
+ */
+C_KZG_RET ifft_g1(
+    g1_t *out, const g1_t *in, size_t n, const KZGSettings *s
+) {
+    CHECK(n <= s->max_width);
+    CHECK(is_power_of_two(n));
+
+    uint64_t stride = s->max_width / n;
+    fft_g1_fast(out, in, 1, s->reverse_roots_of_unity, stride, n);
+
+    fr_t inv_len;
+    fr_from_uint64(&inv_len, n);
+    blst_fr_eucl_inverse(&inv_len, &inv_len);
+    for (uint64_t i = 0; i < n; i++) {
+        g1_mul(&out[i], &out[i], &inv_len);
+    }
+
     return C_KZG_OK;
 }
 
@@ -1972,7 +2068,7 @@ static inline size_t min(size_t a, size_t b) {
  * @param[in]   v   A 64-bit unsigned integer <= 2^31
  * @return The lowest power of two equal or larger than @p v
  *
- * @remark If @p v is already a power of two, it is returned as-is.
+ * @remark If v is already a power of two, it is returned as-is.
  */
 static inline uint64_t next_power_of_two(uint64_t v) {
     if (v == 0) return 1;
