@@ -393,21 +393,14 @@ func TestSampleProof(t *testing.T) {
 	commitment, err := BlobToKZGCommitment(blob)
 	require.NoError(t, err)
 
-	samples, err := GetSamples(blob)
+	samples, proofs, err := GetSamples(blob)
 	require.NoError(t, err)
 
-	for i, sample := range samples {
+	for i := range samples {
 		x, err := GetRootOfUnityAt(i)
 		require.NoError(t, err)
-		proof, y, err := ComputeKZGProof(blob, x)
-		require.NoError(t, err)
-		require.NotNil(t, y)
 
-		t.Log(y)
-		t.Log(sample)
-		t.Log(x)
-
-		ok, err := VerifyKZGProof(Bytes48(commitment), x, sample, Bytes48(proof))
+		ok, err := VerifyKZGProof(Bytes48(commitment), x, samples[i], Bytes48(proofs[i]))
 		require.NoError(t, err)
 		require.True(t, ok)
 	}
@@ -424,8 +417,9 @@ func Benchmark(b *testing.B) {
 	proofs := [length]Bytes48{}
 	fields := [length]Bytes32{}
 	samples := [length][]Bytes32{}
-	partial_samples := [length][]Bytes32{}
-	null_val := Bytes32{
+	sampleProofs := [length][]KZGProof{}
+	partialSamples := [length][]Bytes32{}
+	nullVal := Bytes32{
 		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
 		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
 		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
@@ -443,15 +437,15 @@ func Benchmark(b *testing.B) {
 		commitments[i] = Bytes48(commitment)
 		proofs[i] = Bytes48(proof)
 		fields[i] = getRandFieldElement(int64(i))
-		samples[i], err = GetSamples(blobs[i])
+		samples[i], sampleProofs[i], err = GetSamples(blobs[i])
 		require.NoError(b, err)
 
-		partial_samples[i] = make([]Bytes32, FieldElementsPerBlob*2)
+		partialSamples[i] = make([]Bytes32, FieldElementsPerBlob*2)
 		for j := 0; j < FieldElementsPerBlob*2; j++ {
 			if j%2 == 0 {
-				partial_samples[i][j] = null_val
+				partialSamples[i][j] = nullVal
 			} else {
-				partial_samples[i][j] = samples[i][j]
+				partialSamples[i][j] = samples[i][j]
 			}
 		}
 	}
@@ -498,13 +492,13 @@ func Benchmark(b *testing.B) {
 
 	b.Run("GetSamples", func(b *testing.B) {
 		for n := 0; n < b.N; n++ {
-			_, _ = GetSamples(blobs[0])
+			_, _, _ = GetSamples(blobs[0])
 		}
 	})
 
 	b.Run("RecoverSamples", func(b *testing.B) {
 		for n := 0; n < b.N; n++ {
-			_, _ = RecoverSamples(partial_samples[0])
+			_, _ = RecoverSamples(partialSamples[0])
 		}
 	})
 

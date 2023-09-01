@@ -349,16 +349,18 @@ GetSamples is the binding for:
 	    const Blob *blob,
 	    const KZGSettings *s);
 */
-func GetSamples(blob Blob) ([]Bytes32, error) {
+func GetSamples(blob Blob) ([]Bytes32, []KZGProof, error) {
 	if !loaded {
 		panic("trusted setup isn't loaded")
 	}
 	samples := make([]Bytes32, FieldElementsPerBlob*2)
+	proofs := make([]KZGProof, FieldElementsPerBlob*2)
 	ret := C.get_samples(
 		*(**C.Bytes32)(unsafe.Pointer(&samples)),
+		*(**C.KZGProof)(unsafe.Pointer(&proofs)),
 		(*C.Blob)(unsafe.Pointer(&blob)),
 		&settings)
-	return samples, makeErrorFromRet(ret)
+	return samples, proofs, makeErrorFromRet(ret)
 }
 
 /*
