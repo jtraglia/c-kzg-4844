@@ -1940,7 +1940,7 @@ typedef struct {
  *
  * @return Whichever value is smaller.
  */
-static inline uint64_t min(uint64_t a, uint64_t b) {
+static inline size_t min(size_t a, size_t b) {
     return a < b ? a : b;
 }
 
@@ -2023,21 +2023,23 @@ static C_KZG_RET do_zero_poly_mul_partial(
 }
 
 /**
- * Copy all of the coefficients of polynomial @p p to @p out, padding to length
- * @p p_len with zeros.
+ * Copy polynomial and set remaining fields to zero.
  *
- * @param[out] out     A copy of the coefficients of @p p padded to length @p
- * out_len with zeros
- * @param[in]  out_len The length of the desired output data, @p out
- * @param[in]  p       The polynomial containing the data to be copied and
- * padded
+ * @param[out]  out     The output polynomial with padded zeros
+ * @param[out]  out_len The length of the output polynomial
+ * @param[in]   in      The input polynomial to be copied
+ * @param[in]   out_len The length of the input polynomial
  */
-static C_KZG_RET pad_p(fr_t *out, uint64_t out_len, const poly *p) {
-    CHECK(out_len >= p->length);
-    for (uint64_t i = 0; i < p->length; i++) {
-        out[i] = p->coeffs[i];
+static C_KZG_RET pad_p(
+    fr_t *out, size_t out_len, const fr_t *in, size_t in_len
+) {
+    if (out_len < in_len) {
+        return C_KZG_BADARGS;
     }
-    for (uint64_t i = p->length; i < out_len; i++) {
+    for (size_t i = 0; i < in_len; i++) {
+        out[i] = in[i];
+    }
+    for (size_t i = in_len; i < out_len; i++) {
         out[i] = FR_ZERO;
     }
     return C_KZG_OK;
@@ -2088,13 +2090,20 @@ static C_KZG_RET reduce_partials(
 
     // Do the last partial first: it is no longer than the others and the
     // padding can remain in place for the rest.
-    ret = pad_p(p_padded, len_out, &partials[partial_count - 1]);
+    ret = pad_p(
+        p_padded,
+        len_out,
+        partials[partial_count - 1].coeffs,
+        partials[partial_count - 1].length
+    );
     if (ret != C_KZG_OK) goto out;
     ret = fft_fr(mul_eval_ps, p_padded, false, len_out, s);
     if (ret != C_KZG_OK) goto out;
 
     for (uint64_t i = 0; i < partial_count - 1; i++) {
-        ret = pad_p(p_padded, partials[i].length, &partials[i]);
+        ret = pad_p(
+            p_padded, partials[i].length, partials[i].coeffs, partials[i].length
+        );
         if (ret != C_KZG_OK) goto out;
         ret = fft_fr(p_eval, p_padded, false, len_out, s);
         if (ret != C_KZG_OK) goto out;
@@ -2176,7 +2185,12 @@ C_KZG_RET zero_polynomial_via_multiplication(
 
     if (len_missing <= missing_per_partial) {
         ret = do_zero_poly_mul_partial(
-            zero_poly->coeffs, &zero_poly->length, missing_indices, len_missing, domain_stride, s
+            zero_poly->coeffs,
+            &zero_poly->length,
+            missing_indices,
+            len_missing,
+            domain_stride,
+            s
         );
         if (ret != C_KZG_OK) goto out;
         ret = fft_fr(zero_eval, zero_poly->coeffs, false, length, s);
@@ -2263,7 +2277,9 @@ C_KZG_RET zero_polynomial_via_multiplication(
         }
 
         // Process final output
-        ret = pad_p(zero_poly->coeffs, length, &partials[0]);
+        ret = pad_p(
+            zero_poly->coeffs, length, partials[0].coeffs, partials[0].length
+        );
         if (ret != C_KZG_OK) goto out;
         ret = fft_fr(zero_eval, zero_poly->coeffs, false, length, s);
         if (ret != C_KZG_OK) goto out;
@@ -2288,11 +2304,15 @@ out:
  * much anything not zero or a low-degree root of unity.
  */
 static const fr_t SCALE_FACTOR = {
-    0x0000000afffffff5L, 0x66d9f3df00120c0bL,
-    0xcc83b7a7960bb7c5L, 0x04c9cf6d363b9de5L};
+    0x0000000afffffff5L,
+    0x66d9f3df00120c0bL,
+    0xcc83b7a7960bb7c5L,
+    0x04c9cf6d363b9de5L};
 static const fr_t INV_SCALE_FACTOR = {
-    0x0000000066666666L, 0x11b424cb999a419aL,
-    0x51e8dcc995bf4331L, 0x04d4237855c10116L};
+    0x0000000066666666L,
+    0x11b424cb999a419aL,
+    0x51e8dcc995bf4331L,
+    0x04d4237855c10116L};
 
 /**
  * Scale a polynomial in place.
