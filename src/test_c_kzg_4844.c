@@ -1756,6 +1756,7 @@ static void test_reconstruct__random_blob(void) {
     Bytes32 *samples = NULL;
     Bytes32 *partial = NULL;
     Bytes32 *recovered = NULL;
+    KZGProof *proofs = NULL;
     int diff;
 
     /* Allocate arrays */
@@ -1765,12 +1766,14 @@ static void test_reconstruct__random_blob(void) {
     ASSERT_EQUALS(ret, C_KZG_OK);
     ret = c_kzg_calloc((void **)&recovered, n, sizeof(Bytes32));
     ASSERT_EQUALS(ret, C_KZG_OK);
+    ret = c_kzg_calloc((void **)&proofs, n, sizeof(KZGProof));
+    ASSERT_EQUALS(ret, C_KZG_OK);
 
     /* Get a random blob */
     get_rand_blob(&blob);
 
     /* Get the samples */
-    ret = get_samples(samples, &blob, &s);
+    ret = get_samples(samples, proofs, &blob, &s);
     ASSERT_EQUALS(ret, C_KZG_OK);
 
     /* Erase half of the samples */

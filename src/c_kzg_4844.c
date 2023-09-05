@@ -208,6 +208,9 @@ static C_KZG_RET c_kzg_calloc(void **out, size_t count, size_t size) {
 static C_KZG_RET new_g1_array(g1_t **x, size_t n) {
     return c_kzg_calloc((void **)x, n, sizeof(g1_t));
 }
+static C_KZG_RET new_g1_array_2(g1_t ***x, size_t n) {
+    return c_kzg_malloc((void **)x, n * sizeof **x);
+}
 
 /**
  * Allocate memory for an array of G2 group elements.
@@ -1999,9 +2002,7 @@ static void fft_g1_fast(
  * @remark The array lengths must be a power of two.
  * @remark Use ifft_g1 for inverse transformation.
  */
-C_KZG_RET fft_g1(
-    g1_t *out, const g1_t *in, size_t n, const KZGSettings *s
-) {
+C_KZG_RET fft_g1(g1_t *out, const g1_t *in, size_t n, const KZGSettings *s) {
     CHECK(n <= s->max_width);
     CHECK(is_power_of_two(n));
 
@@ -2022,9 +2023,7 @@ C_KZG_RET fft_g1(
  * @remark The array lengths must be a power of two.
  * @remark Use fft_g1 for forward transformation.
  */
-C_KZG_RET ifft_g1(
-    g1_t *out, const g1_t *in, size_t n, const KZGSettings *s
-) {
+C_KZG_RET ifft_g1(g1_t *out, const g1_t *in, size_t n, const KZGSettings *s) {
     CHECK(n <= s->max_width);
     CHECK(is_power_of_two(n));
 
@@ -2049,6 +2048,17 @@ typedef struct {
     fr_t *coeffs;
     size_t length;
 } poly;
+
+static C_KZG_RET new_poly(poly *out, uint64_t length) {
+    out->length = length;
+    return new_fr_array(&out->coeffs, length);
+}
+
+static void free_poly(poly *p) {
+    if (p->coeffs != NULL) {
+        c_kzg_free(p->coeffs);
+    }
+}
 
 /**
  * Get the minimum of two unsigned integers.
@@ -2410,9 +2420,9 @@ static C_KZG_RET zero_polynomial_via_multiplication(
 
         zero_poly->length = partials[0].length;
 
-        free(work);
-        free(partials);
-        free(scratch);
+        c_kzg_free(work);
+        c_kzg_free(partials);
+        c_kzg_free(scratch);
     }
 
 out:
@@ -2687,6 +2697,8 @@ C_KZG_RET get_samples(
     fr_t *poly = NULL;
     fr_t *samples_fr = NULL;
 
+    (void)proofs;
+
     /* Allocate space fr-form arrays */
     ret = new_fr_array(&poly, s->max_width);
     if (ret != C_KZG_OK) goto out;
@@ -2774,13 +2786,12 @@ out:
  * Stores the setup and parameters needed for computing FK20 multi proofs.
  */
 typedef struct {
-    const KZGSettings *ks;  /**< The corresponding settings for performing KZG proofs */
+    const KZGSettings
+        *ks; /**< The corresponding settings for performing KZG proofs */
     uint64_t chunk_len;     /**< TODO */
     g1_t **x_ext_fft_files; /**< TODO */
     uint64_t length;        /**< TODO */
 } FK20MultiSettings;
-
-static const g1_t G1_IDENTITY = {{0L, 0L, 0L, 0L, 0L, 0L}, {0L, 0L, 0L, 0L, 0L, 0L}, {0L, 0L, 0L, 0L, 0L, 0L}};
 
 /**
  * The first part of the Toeplitz matrix multiplication algorithm: the Fourier
@@ -2789,12 +2800,15 @@ static const g1_t G1_IDENTITY = {{0L, 0L, 0L, 0L, 0L, 0L}, {0L, 0L, 0L, 0L, 0L, 
  * @param[out] out The FFT of the extension of @p x, size @p n * 2
  * @param[in]  x   The input vector, size @p n
  * @param[in]  n   The length of the input vector @p x
- * @param[in]  fs  The FFT settings previously initialised with #new_fft_settings
+ * @param[in]  fs  The FFT settings previously initialised with
+ * #new_fft_settings
  * @retval C_CZK_OK      All is well
  * @retval C_CZK_ERROR   An internal error occurred
  * @retval C_CZK_MALLOC  Memory allocation failed
  */
-static C_KZG_RET toeplitz_part_1(g1_t *out, const g1_t *x, uint64_t n, const KZGSettings *fs) {
+static C_KZG_RET toeplitz_part_1(
+    g1_t *out, const g1_t *x, uint64_t n, const KZGSettings *fs
+) {
     C_KZG_RET ret;
     uint64_t n2 = n * 2;
     g1_t *x_ext;
@@ -2813,7 +2827,7 @@ static C_KZG_RET toeplitz_part_1(g1_t *out, const g1_t *x, uint64_t n, const KZG
     if (ret != C_KZG_OK) goto out;
 
 out:
-    free(x_ext);
+    c_kzg_free(x_ext);
     return ret;
 }
 
@@ -2822,24 +2836,37 @@ out:
  *
  * @param[out] out Array of G1 group elements, length `n`
  * @param[in]  toeplitz_coeffs Toeplitz coefficients, a polynomial length `n`
- * @param[in]  x_ext_fft The Fourier transform of the extended `x` vector, length `n`
- * @param[in]  fs  The FFT settings previously initialised with #new_fft_settings
+ * @param[in]  x_ext_fft The Fourier transform of the extended `x` vector,
+ * length `n`
+ * @param[in]  fs  The FFT settings previously initialised with
+ * #new_fft_settings
  * @retval C_CZK_OK      All is well
  * @retval C_CZK_BADARGS Invalid parameters were supplied
  * @retval C_CZK_ERROR   An internal error occurred
  * @retval C_CZK_MALLOC  Memory allocation failed
  */
-static C_KZG_RET toeplitz_part_2(g1_t *out, const poly *toeplitz_coeffs, const g1_t *x_ext_fft, const KZGSettings *fs) {
+static C_KZG_RET toeplitz_part_2(
+    g1_t *out,
+    const poly *toeplitz_coeffs,
+    const g1_t *x_ext_fft,
+    const KZGSettings *fs
+) {
     C_KZG_RET ret;
 
     fr_t *toeplitz_coeffs_fft;
 
-    // CHECK(toeplitz_coeffs->length == fk->x_ext_fft_len); // TODO: how to implement?
+    // CHECK(toeplitz_coeffs->length == fk->x_ext_fft_len); // TODO: how to
+    // implement?
 
     ret = new_fr_array(&toeplitz_coeffs_fft, toeplitz_coeffs->length);
     if (ret != C_KZG_OK) goto out;
 
-    ret = fft_fr(toeplitz_coeffs_fft, toeplitz_coeffs->coeffs, toeplitz_coeffs->length, fs);
+    ret = fft_fr(
+        toeplitz_coeffs_fft,
+        toeplitz_coeffs->coeffs,
+        toeplitz_coeffs->length,
+        fs
+    );
     if (ret != C_KZG_OK) goto out;
 
     for (uint64_t i = 0; i < toeplitz_coeffs->length; i++) {
@@ -2847,21 +2874,25 @@ static C_KZG_RET toeplitz_part_2(g1_t *out, const poly *toeplitz_coeffs, const g
     }
 
 out:
-    free(toeplitz_coeffs_fft);
+    c_kzg_free(toeplitz_coeffs_fft);
     return ret;
 }
 
 /**
- * The third part of the Toeplitz matrix multiplication algorithm: transform back and zero the top half.
+ * The third part of the Toeplitz matrix multiplication algorithm: transform
+ * back and zero the top half.
  *
  * @param[out] out Array of G1 group elements, length @p n2
  * @param[in]  h_ext_fft FFT of the extended `h` values, length @p n2
  * @param[in]  n2  Size of the arrays
- * @param[in]  fs  The FFT settings previously initialised with #new_fft_settings
+ * @param[in]  fs  The FFT settings previously initialised with
+ * #new_fft_settings
  * @retval C_CZK_OK      All is well
  * @retval C_CZK_ERROR   An internal error occurred
  */
-static C_KZG_RET toeplitz_part_3(g1_t *out, const g1_t *h_ext_fft, uint64_t n2, const KZGSettings *fs) {
+static C_KZG_RET toeplitz_part_3(
+    g1_t *out, const g1_t *h_ext_fft, uint64_t n2, const KZGSettings *fs
+) {
     C_KZG_RET ret;
     uint64_t n = n2 / 2;
 
@@ -2878,9 +2909,11 @@ out:
 }
 
 /**
- * Reorder and extend polynomial coefficients for the toeplitz method, strided version.
+ * Reorder and extend polynomial coefficients for the toeplitz method, strided
+ * version.
  *
- * @remark The upper half of the input polynomial coefficients is treated as being zero.
+ * @remark The upper half of the input polynomial coefficients is treated as
+ * being zero.
  *
  * @param[out] out The reordered polynomial, size `n * 2 / stride`
  * @param[in]  in  The input polynomial, size `n`
@@ -2890,8 +2923,9 @@ out:
  * @retval C_CZK_BADARGS Invalid parameters were supplied
  * @retval C_CZK_MALLOC  Memory allocation failed
  */
-static C_KZG_RET toeplitz_coeffs_stride(poly *out, const poly *in, uint64_t offset, uint64_t stride) {
-    C_KZG_RET ret;
+static C_KZG_RET toeplitz_coeffs_stride(
+    poly *out, const poly *in, uint64_t offset, uint64_t stride
+) {
     uint64_t n = in->length, k, k2;
 
     CHECK(stride > 0);
@@ -2903,20 +2937,21 @@ static C_KZG_RET toeplitz_coeffs_stride(poly *out, const poly *in, uint64_t offs
 
     out->coeffs[0] = in->coeffs[n - 1 - offset];
     for (uint64_t i = 1; i <= k + 1 && i < k2; i++) {
-        out->coeffs[i] = fr_zero;
+        out->coeffs[i] = FR_ZERO;
     }
-    for (uint64_t i = k + 2, j = 2 * stride - offset - 1; i < k2; i++, j += stride) {
+    for (uint64_t i = k + 2, j = 2 * stride - offset - 1; i < k2;
+         i++, j += stride) {
         out->coeffs[i] = in->coeffs[j];
     }
 
-out:
-    return ret;
+    return C_KZG_OK;
 }
 
 /**
  * Reorder and extend polynomial coefficients for the toeplitz method.
  *
- * @remark The upper half of the input polynomial coefficients is treated as being zero.
+ * @remark The upper half of the input polynomial coefficients is treated as
+ * being zero.
  *
  * @param[out] out The reordered polynomial, size `n * 2`
  * @param[in]  in  The input polynomial, size `n`
@@ -2928,65 +2963,13 @@ static C_KZG_RET toeplitz_coeffs_step(poly *out, const poly *in) {
 }
 
 /**
- * Optimised version of the FK20 algorithm for use in data availability checks.
- *
- * Simultaneously calculates all the KZG proofs for `x_i = w^i` (`0 <= i < 2n`), where `w` is a `(2 * n)`th root of
- * unity. The `2n` comes from the polynomial being extended with zeros to twice the original size.
- *
- * `out[i]` is the proof for `y[i]`, the evaluation of the polynomial at `fs.expanded_roots_of_unity[i]`.
- *
- * @remark Only the lower half of the polynomial is supplied; the upper, zero, half is assumed. The
- * #toeplitz_coeffs_step routine does the right thing.
- *
- * @param[out] out Array size `n * 2`
- * @param[in]  p   Polynomial, size `n`
- * @param[in]  fk  FK20 single settings previously initialised by #new_fk20_single_settings
- * @retval C_CZK_OK      All is well
- * @retval C_CZK_BADARGS Invalid parameters were supplied
- * @retval C_CZK_ERROR   An internal error occurred
- * @retval C_CZK_MALLOC  Memory allocation failed
- */
-static C_KZG_RET fk20_single_da_opt(g1_t *out, const poly *p, const FK20SingleSettings *fk) {
-    C_KZG_RET ret;
-    uint64_t n = p->length, n2 = n * 2;
-    g1_t *h, *h_ext_fft;
-    poly toeplitz_coeffs;
-
-    CHECK(n2 <= fk->ks->max_width);
-    CHECK(is_power_of_two(n));
-
-    ret = new_poly(&toeplitz_coeffs, 2 * p->length);
-    if (ret != C_KZG_OK) goto out;
-    ret = toeplitz_coeffs_step(&toeplitz_coeffs, p);
-    if (ret != C_KZG_OK) goto out;
-
-    ret = new_g1_array(&h_ext_fft, toeplitz_coeffs.length);
-    if (ret != C_KZG_OK) goto out;
-    ret = toeplitz_part_2(h_ext_fft, &toeplitz_coeffs, fk->x_ext_fft, fk->ks);
-    if (ret != C_KZG_OK) goto out;
-
-    ret = new_g1_array(&h, n2);
-    if (ret != C_KZG_OK) goto out;
-    ret = toeplitz_part_3(h, h_ext_fft, n2, fk->ks);
-    if (ret != C_KZG_OK) goto out;
-
-    ret = fft_g1(out, h, false, n2, fk->ks);
-    if (ret != C_KZG_OK) goto out;
-
-out:
-    free_poly(&toeplitz_coeffs);
-    free(h_ext_fft);
-    free(h);
-    return ret;
-}
-
-/**
  * FK20 Method to compute all proofs - multi proof method
  *
- * Toeplitz multiplication as per http://www.netlib.org/utk/people/JackDongarra/etemplates/node384.html
+ * Toeplitz multiplication as per
+ * http://www.netlib.org/utk/people/JackDongarra/etemplates/node384.html
  *
- * For a polynomial of size `n`, let `w` be a `n`th root of unity. Then this method will return
- * `k = n / l` KZG proofs for the points:
+ * For a polynomial of size `n`, let `w` be a `n`th root of unity. Then this
+ * method will return `k = n / l` KZG proofs for the points:
  *
  * ```
  * proof[0]: w^(0*l + 0), w^(0*l + 1), ... w^(0*l + l - 1)
@@ -2997,12 +2980,15 @@ out:
  *
  * @param[out] out The proofs, array size @p p->length * 2
  * @param[in]  p   The polynomial
- * @param[in]  fk  FK20 multi settings previously initialised by #new_fk20_multi_settings
+ * @param[in]  fk  FK20 multi settings previously initialised by
+ * #new_fk20_multi_settings
  */
-C_KZG_RET fk20_compute_proof_multi(g1_t *out, const poly *p, const FK20MultiSettings *fk) {
+C_KZG_RET fk20_compute_proof_multi(
+    g1_t *out, const poly *p, const FK20MultiSettings *fk
+) {
     C_KZG_RET ret;
     uint64_t n = p->length, n2 = n * 2;
-    g1_t *h_ext_fft, *h_ext_fft_file, *h;
+    g1_t *h_ext_fft = NULL, *h_ext_fft_file = NULL, *h = NULL;
     poly toeplitz_coeffs;
 
     CHECK(fk->ks->max_width >= n2);
@@ -3022,11 +3008,15 @@ C_KZG_RET fk20_compute_proof_multi(g1_t *out, const poly *p, const FK20MultiSett
     for (uint64_t i = 0; i < fk->chunk_len; i++) {
         ret = toeplitz_coeffs_step(&toeplitz_coeffs, p);
         if (ret != C_KZG_OK) goto out;
-        ret = toeplitz_part_2(h_ext_fft_file, &toeplitz_coeffs, fk->x_ext_fft_files[i], fk->ks);
+        ret = toeplitz_part_2(
+            h_ext_fft_file, &toeplitz_coeffs, fk->x_ext_fft_files[i], fk->ks
+        );
         if (ret != C_KZG_OK) goto out;
 
         for (uint64_t j = 0; j < n2; j++) {
-            g1_add_or_dbl(&h_ext_fft[j], &h_ext_fft[j], &h_ext_fft_file[j]);
+            blst_p1_add_or_double(
+                &h_ext_fft[j], &h_ext_fft[j], &h_ext_fft_file[j]
+            );
         }
     }
 
@@ -3035,32 +3025,35 @@ C_KZG_RET fk20_compute_proof_multi(g1_t *out, const poly *p, const FK20MultiSett
     ret = toeplitz_part_3(h, h_ext_fft, n2, fk->ks);
     if (ret != C_KZG_OK) goto out;
 
-    ret = fft_g1(out, h, false, n2, fk->ks);
+    ret = fft_g1(out, h, n2, fk->ks);
     if (ret != C_KZG_OK) goto out;
 
 out:
-    free(h_ext_fft);
-    free(h);
+    c_kzg_free(h_ext_fft);
+    c_kzg_free(h);
     free_poly(&toeplitz_coeffs);
-    free(h_ext_fft_file);
+    c_kzg_free(h_ext_fft_file);
     return ret;
 }
 
 /**
- * FK20 multi-proof method, optimized for data availability where the top half of polynomial
- * coefficients is zero.
+ * FK20 multi-proof method, optimized for data availability where the top half
+ * of polynomial coefficients is zero.
  *
- * @remark Only the lower half of the polynomial is supplied; the upper, zero, half is assumed. The
- * #toeplitz_coeffs_stride routine does the right thing.
+ * @remark Only the lower half of the polynomial is supplied; the upper, zero,
+ * half is assumed. The #toeplitz_coeffs_stride routine does the right thing.
  *
  * @param[out] out The proofs, array size `2 * n / fk->chunk_length`
  * @param[in]  p   The polynomial, length `n`
- * @param[in]  fk  FK20 multi settings previously initialised by #new_fk20_multi_settings
+ * @param[in]  fk  FK20 multi settings previously initialised by
+ * #new_fk20_multi_settings
  */
-static C_KZG_RET fk20_multi_da_opt(g1_t *out, const poly *p, const FK20MultiSettings *fk) {
+static C_KZG_RET fk20_multi_da_opt(
+    g1_t *out, const poly *p, const FK20MultiSettings *fk
+) {
     C_KZG_RET ret;
     uint64_t n = p->length, n2 = n * 2, k, k2;
-    g1_t *h_ext_fft, *h_ext_fft_file, *h;
+    g1_t *h_ext_fft = NULL, *h_ext_fft_file = NULL, *h = NULL;
     poly toeplitz_coeffs;
 
     CHECK(n2 <= fk->ks->max_width);
@@ -3083,11 +3076,15 @@ static C_KZG_RET fk20_multi_da_opt(g1_t *out, const poly *p, const FK20MultiSett
     for (uint64_t i = 0; i < fk->chunk_len; i++) {
         ret = toeplitz_coeffs_stride(&toeplitz_coeffs, p, i, fk->chunk_len);
         if (ret != C_KZG_OK) goto out;
-        ret = toeplitz_part_2(h_ext_fft_file, &toeplitz_coeffs, fk->x_ext_fft_files[i], fk->ks);
+        ret = toeplitz_part_2(
+            h_ext_fft_file, &toeplitz_coeffs, fk->x_ext_fft_files[i], fk->ks
+        );
         if (ret != C_KZG_OK) goto out;
 
         for (uint64_t j = 0; j < k2; j++) {
-            g1_add_or_dbl(&h_ext_fft[j], &h_ext_fft[j], &h_ext_fft_file[j]);
+            blst_p1_add_or_double(
+                &h_ext_fft[j], &h_ext_fft[j], &h_ext_fft_file[j]
+            );
         }
     }
 
@@ -3107,19 +3104,22 @@ static C_KZG_RET fk20_multi_da_opt(g1_t *out, const poly *p, const FK20MultiSett
 
 out:
     free_poly(&toeplitz_coeffs);
-    free(h_ext_fft_file);
-    free(h_ext_fft);
-    free(h);
+    c_kzg_free(h_ext_fft_file);
+    c_kzg_free(h_ext_fft);
+    c_kzg_free(h);
     return ret;
 }
 
 /**
  * Computes all the KZG proofs for data availability checks.
  *
- * This involves sampling on the double domain and reordering according to reverse bit order.
+ * This involves sampling on the double domain and reordering according to
+ * reverse bit order.
  *
  */
-C_KZG_RET da_using_fk20_multi(g1_t *out, const poly *p, const FK20MultiSettings *fk) {
+C_KZG_RET da_using_fk20_multi(
+    g1_t *out, const poly *p, const FK20MultiSettings *fk
+) {
     C_KZG_RET ret;
     uint64_t n = p->length, n2 = n * 2;
 
@@ -3138,8 +3138,9 @@ out:
 /**
  * Initialise settings for an FK20 multi proof.
  *
- * @remark As with all functions prefixed `new_`, this allocates memory that needs to be reclaimed by calling the
- * corresponding `free_` function. In this case, #free_fk20_multi_settings.
+ * @remark As with all functions prefixed `new_`, this allocates memory that
+ * needs to be reclaimed by calling the corresponding `free_` function. In this
+ * case, #free_fk20_multi_settings.
  *
  * @param[out] fk The initialised settings
  * @param[in]  n2 The desired size of `x_ext_fft`, a power of two
@@ -3150,10 +3151,15 @@ out:
  * @retval C_CZK_ERROR   An internal error occurred
  * @retval C_CZK_MALLOC  Memory allocation failed
  */
-C_KZG_RET new_fk20_multi_settings(FK20MultiSettings *fk, uint64_t n2, uint64_t chunk_len, const KZGSettings *ks) {
+C_KZG_RET new_fk20_multi_settings(
+    FK20MultiSettings *fk,
+    uint64_t n2,
+    uint64_t chunk_len,
+    const KZGSettings *ks
+) {
     C_KZG_RET ret;
     uint64_t n, k;
-    g1_t *x;
+    g1_t *x = NULL;
 
     CHECK(n2 <= ks->max_width);
     CHECK(is_power_of_two(n2));
@@ -3168,8 +3174,11 @@ C_KZG_RET new_fk20_multi_settings(FK20MultiSettings *fk, uint64_t n2, uint64_t c
     fk->ks = ks;
     fk->chunk_len = chunk_len;
 
-    // `x_ext_fft_files` is two dimensional. Allocate space for pointers to the rows.
-    ret = new_g1_array_2(&fk->x_ext_fft_files, chunk_len * sizeof *fk->x_ext_fft_files);
+    // `x_ext_fft_files` is two dimensional. Allocate space for pointers to the
+    // rows.
+    ret = new_g1_array_2(
+        &fk->x_ext_fft_files, chunk_len * sizeof *fk->x_ext_fft_files
+    );
     if (ret != C_KZG_OK) goto out;
 
     ret = new_g1_array(&x, k);
@@ -3189,6 +3198,6 @@ C_KZG_RET new_fk20_multi_settings(FK20MultiSettings *fk, uint64_t n2, uint64_t c
     }
 
 out:
-    free(x);
+    c_kzg_free(x);
     return ret;
 }
