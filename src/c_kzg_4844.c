@@ -2625,159 +2625,6 @@ out:
     return ret;
 }
 
-/**
- * Given at least n samples, recover the missing samples.
- *
- * @param[out]  recovered   A preallocated array for recovered samples
- * @param[in]   samples     The samples that you have
- * @param[in]   s           The trusted setup
- *
- * @remark Where n is the number of fields in the blob.
- * @remark The array of samples must be 2n length and in the correct order.
- * @remark Missing samples are marked as 0xffff...ffff (32 bytes).
- * @remark Recovery is faster if there are fewer missing samples.
- */
-C_KZG_RET recover_samples(
-    Bytes32 *recovered, const Bytes32 *samples, const KZGSettings *s
-) {
-    C_KZG_RET ret;
-    fr_t *recovered_fr = NULL;
-    fr_t *samples_fr = NULL;
-
-    /* Allocate space fr-form arrays */
-    ret = new_fr_array(&recovered_fr, s->max_width);
-    if (ret != C_KZG_OK) goto out;
-    ret = new_fr_array(&samples_fr, s->max_width);
-    if (ret != C_KZG_OK) goto out;
-
-    /* Convert samples to fr-form */
-    for (size_t i = 0; i < s->max_width; i++) {
-        /* Missing samples are marked as 0xffff...ffff */
-        if (!memcmp(&samples[i].bytes, &FR_NULL, sizeof(Bytes32))) {
-            samples_fr[i] = FR_NULL;
-        } else {
-            ret = bytes_to_bls_field(&samples_fr[i], &samples[i]);
-            if (ret != C_KZG_OK) goto out;
-        }
-    }
-
-    /* Call the implementation function to do the bulk of the work */
-    ret = recover_samples_impl(recovered_fr, samples_fr, s);
-    if (ret != C_KZG_OK) goto out;
-
-    /* Convert the recovered samples to byte-form */
-    for (size_t i = 0; i < s->max_width; i++) {
-        bytes_from_bls_field(&recovered[i], &recovered_fr[i]);
-    }
-
-out:
-    c_kzg_free(recovered_fr);
-    c_kzg_free(samples_fr);
-    return ret;
-}
-
-/**
- * Given a blob, get 2n samples.
- *
- * @param[out]  samples A preallocated array for samples
- * @param[out]  proofs  A preallocated array for sample proofs
- * @param[in]   blob    The blob to get samples for
- * @param[in]   s       The trusted setup
- *
- * @remark Where n is the number of fields in the blob.
- * @remark If a blob has 4096 fields, there will be 8192 samples.
- * @remark Use samples_to_blob to convert the samples into a blob.
- * @remark Up to half of these samples may be lost.
- * @remark Use recover_samples to recover missing samples.
- */
-C_KZG_RET get_samples(
-    Bytes32 *samples, KZGProof *proofs, const Blob *blob, const KZGSettings *s
-) {
-    C_KZG_RET ret;
-    fr_t *poly = NULL;
-    fr_t *samples_fr = NULL;
-
-    (void)proofs;
-
-    /* Allocate space fr-form arrays */
-    ret = new_fr_array(&poly, s->max_width);
-    if (ret != C_KZG_OK) goto out;
-    ret = new_fr_array(&samples_fr, s->max_width);
-    if (ret != C_KZG_OK) goto out;
-
-    /* Initialize all of the polynomial fields to zero */
-    memset(poly, 0, sizeof(fr_t) * s->max_width);
-
-    /*
-     * Convert the blob to a polynomial. Note that only the first 4096 fields
-     * of the polynomial will be set. The upper 4096 fields will remain zero.
-     * This is required because the polynomial will be evaluated with 8192
-     * roots of unity.
-     */
-    ret = blob_to_polynomial((Polynomial *)poly, blob);
-    if (ret != C_KZG_OK) goto out;
-
-    /* Get the samples via forward transformation */
-    ret = fft_fr(samples_fr, poly, s->max_width, s);
-    if (ret != C_KZG_OK) goto out;
-
-    /* Convert all of the samples to byte-form */
-    for (size_t i = 0; i < s->max_width; i++) {
-        bytes_from_bls_field(&samples[i], &samples_fr[i]);
-    }
-
-out:
-    c_kzg_free(poly);
-    c_kzg_free(samples_fr);
-    return ret;
-}
-
-/**
- * Given 2n samples, get a blob.
- *
- * @param[out]  samples A preallocated array for samples
- * @param[in]   blob    The blob to get samples for
- * @param[in]   s       The trusted setup
- *
- * @remark Where n is the number of fields in the blob.
- * @remark If a blob has 4096 fields, you need 8192 samples.
- */
-C_KZG_RET samples_to_blob(
-    Blob *blob, const Bytes32 *samples, const KZGSettings *s
-) {
-    C_KZG_RET ret;
-    fr_t *poly = NULL;
-    fr_t *samples_fr = NULL;
-
-    /* Allocate space fr-form arrays */
-    ret = new_fr_array(&poly, s->max_width);
-    if (ret != C_KZG_OK) goto out;
-    ret = new_fr_array(&samples_fr, s->max_width);
-    if (ret != C_KZG_OK) goto out;
-
-    /* Convert the samples to fr-form */
-    for (size_t i = 0; i < s->max_width; i++) {
-        ret = bytes_to_bls_field(&samples_fr[i], &samples[i]);
-        if (ret != C_KZG_OK) goto out;
-    }
-
-    /* Get the polynomial via inverse transformation */
-    ret = ifft_fr(poly, samples_fr, s->max_width, s);
-    if (ret != C_KZG_OK) goto out;
-
-    /* Convert the polynomial to a blob */
-    Bytes32 *field = (Bytes32 *)blob->bytes;
-    for (size_t i = 0; i < FIELD_ELEMENTS_PER_BLOB; i++) {
-        bytes_from_bls_field(field, &poly[i]);
-        field++;
-    }
-
-out:
-    c_kzg_free(poly);
-    c_kzg_free(samples_fr);
-    return ret;
-}
-
 ///////////
 // FK20
 //////////
@@ -3199,5 +3046,162 @@ C_KZG_RET new_fk20_multi_settings(
 
 out:
     c_kzg_free(x);
+    return ret;
+}
+
+//////////////
+// Public Fns
+//////////////
+
+/**
+ * Given at least n samples, recover the missing samples.
+ *
+ * @param[out]  recovered   A preallocated array for recovered samples
+ * @param[in]   samples     The samples that you have
+ * @param[in]   s           The trusted setup
+ *
+ * @remark Where n is the number of fields in the blob.
+ * @remark The array of samples must be 2n length and in the correct order.
+ * @remark Missing samples are marked as 0xffff...ffff (32 bytes).
+ * @remark Recovery is faster if there are fewer missing samples.
+ */
+C_KZG_RET recover_samples(
+    Bytes32 *recovered, const Bytes32 *samples, const KZGSettings *s
+) {
+    C_KZG_RET ret;
+    fr_t *recovered_fr = NULL;
+    fr_t *samples_fr = NULL;
+
+    /* Allocate space fr-form arrays */
+    ret = new_fr_array(&recovered_fr, s->max_width);
+    if (ret != C_KZG_OK) goto out;
+    ret = new_fr_array(&samples_fr, s->max_width);
+    if (ret != C_KZG_OK) goto out;
+
+    /* Convert samples to fr-form */
+    for (size_t i = 0; i < s->max_width; i++) {
+        /* Missing samples are marked as 0xffff...ffff */
+        if (!memcmp(&samples[i].bytes, &FR_NULL, sizeof(Bytes32))) {
+            samples_fr[i] = FR_NULL;
+        } else {
+            ret = bytes_to_bls_field(&samples_fr[i], &samples[i]);
+            if (ret != C_KZG_OK) goto out;
+        }
+    }
+
+    /* Call the implementation function to do the bulk of the work */
+    ret = recover_samples_impl(recovered_fr, samples_fr, s);
+    if (ret != C_KZG_OK) goto out;
+
+    /* Convert the recovered samples to byte-form */
+    for (size_t i = 0; i < s->max_width; i++) {
+        bytes_from_bls_field(&recovered[i], &recovered_fr[i]);
+    }
+
+out:
+    c_kzg_free(recovered_fr);
+    c_kzg_free(samples_fr);
+    return ret;
+}
+
+/**
+ * Given a blob, get 2n samples.
+ *
+ * @param[out]  samples A preallocated array for samples
+ * @param[out]  proofs  A preallocated array for sample proofs
+ * @param[in]   blob    The blob to get samples for
+ * @param[in]   s       The trusted setup
+ *
+ * @remark Where n is the number of fields in the blob.
+ * @remark If a blob has 4096 fields, there will be 8192 samples.
+ * @remark Use samples_to_blob to convert the samples into a blob.
+ * @remark Up to half of these samples may be lost.
+ * @remark Use recover_samples to recover missing samples.
+ */
+C_KZG_RET get_samples(
+    Bytes32 *samples, KZGProof *proofs, const Blob *blob, const KZGSettings *s
+) {
+    C_KZG_RET ret;
+    fr_t *poly = NULL;
+    fr_t *samples_fr = NULL;
+
+    (void)proofs;
+
+    /* Allocate space fr-form arrays */
+    ret = new_fr_array(&poly, s->max_width);
+    if (ret != C_KZG_OK) goto out;
+    ret = new_fr_array(&samples_fr, s->max_width);
+    if (ret != C_KZG_OK) goto out;
+
+    /* Initialize all of the polynomial fields to zero */
+    memset(poly, 0, sizeof(fr_t) * s->max_width);
+
+    /*
+     * Convert the blob to a polynomial. Note that only the first 4096 fields
+     * of the polynomial will be set. The upper 4096 fields will remain zero.
+     * This is required because the polynomial will be evaluated with 8192
+     * roots of unity.
+     */
+    ret = blob_to_polynomial((Polynomial *)poly, blob);
+    if (ret != C_KZG_OK) goto out;
+
+    /* Get the samples via forward transformation */
+    ret = fft_fr(samples_fr, poly, s->max_width, s);
+    if (ret != C_KZG_OK) goto out;
+
+    /* Convert all of the samples to byte-form */
+    for (size_t i = 0; i < s->max_width; i++) {
+        bytes_from_bls_field(&samples[i], &samples_fr[i]);
+    }
+
+out:
+    c_kzg_free(poly);
+    c_kzg_free(samples_fr);
+    return ret;
+}
+
+/**
+ * Given 2n samples, get a blob.
+ *
+ * @param[out]  samples A preallocated array for samples
+ * @param[in]   blob    The blob to get samples for
+ * @param[in]   s       The trusted setup
+ *
+ * @remark Where n is the number of fields in the blob.
+ * @remark If a blob has 4096 fields, you need 8192 samples.
+ */
+C_KZG_RET samples_to_blob(
+    Blob *blob, const Bytes32 *samples, const KZGSettings *s
+) {
+    C_KZG_RET ret;
+    fr_t *poly = NULL;
+    fr_t *samples_fr = NULL;
+
+    /* Allocate space fr-form arrays */
+    ret = new_fr_array(&poly, s->max_width);
+    if (ret != C_KZG_OK) goto out;
+    ret = new_fr_array(&samples_fr, s->max_width);
+    if (ret != C_KZG_OK) goto out;
+
+    /* Convert the samples to fr-form */
+    for (size_t i = 0; i < s->max_width; i++) {
+        ret = bytes_to_bls_field(&samples_fr[i], &samples[i]);
+        if (ret != C_KZG_OK) goto out;
+    }
+
+    /* Get the polynomial via inverse transformation */
+    ret = ifft_fr(poly, samples_fr, s->max_width, s);
+    if (ret != C_KZG_OK) goto out;
+
+    /* Convert the polynomial to a blob */
+    Bytes32 *field = (Bytes32 *)blob->bytes;
+    for (size_t i = 0; i < FIELD_ELEMENTS_PER_BLOB; i++) {
+        bytes_from_bls_field(field, &poly[i]);
+        field++;
+    }
+
+out:
+    c_kzg_free(poly);
+    c_kzg_free(samples_fr);
     return ret;
 }
