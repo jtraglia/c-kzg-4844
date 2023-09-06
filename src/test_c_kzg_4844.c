@@ -1806,6 +1806,33 @@ static void test_reconstruct__random_blob(void) {
     ASSERT_EQUALS(diff, 0);
 }
 
+#if 0
+static void eval_poly_2(fr_t *out, const poly *p, const fr_t *x) {
+    fr_t tmp;
+    uint64_t i;
+
+    if (p->length == 0) {
+        *out = FR_ZERO;
+        return;
+    }
+
+    if (fr_is_zero(x)) {
+        *out = p->coeffs[0];
+        return;
+    }
+
+    // Horner's method
+    *out = p->coeffs[p->length - 1];
+    i = p->length - 2;
+    while (true) {
+        blst_fr_mul(&tmp, out, x);
+        blst_fr_add(out, &tmp, &p->coeffs[i]);
+        if (i == 0) break;
+        --i;
+    }
+}
+#endif
+
 ///////////////////////////////////////////////////////////////////////////////
 // Profiling Functions
 ///////////////////////////////////////////////////////////////////////////////
@@ -2017,6 +2044,7 @@ int main(void) {
     RUN(test_expand_root_of_unity__fails_not_root_of_unity);
     RUN(test_expand_root_of_unity__fails_wrong_root_of_unity);
     RUN(test_reconstruct__random_blob);
+    //RUN(test_blah);
 
     /*
      * These functions are only executed if we're profiling. To me, it makes

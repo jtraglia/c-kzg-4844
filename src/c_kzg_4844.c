@@ -908,7 +908,9 @@ C_KZG_RET BLOB_TO_KZG_COMMITMENT(
 
     ret = blob_to_polynomial(&p, blob);
     if (ret != C_KZG_OK) return ret;
-    ret = poly_to_kzg_commitment(&commitment, p.evals, FIELD_ELEMENTS_PER_BLOB, s);
+    ret = poly_to_kzg_commitment(
+        &commitment, p.evals, FIELD_ELEMENTS_PER_BLOB, s
+    );
     if (ret != C_KZG_OK) return ret;
     bytes_from_g1(out, &commitment);
     return C_KZG_OK;
@@ -1529,6 +1531,11 @@ static int log2_pow2(uint32_t n) {
     while (n >>= 1)
         position++;
     return position;
+}
+
+static uint32_t reverse_bits_limited(uint32_t n, uint32_t value) {
+    int unused_bit_len = 32 - log2_pow2(n);
+    return reverse_bits(value) >> unused_bit_len;
 }
 
 /**
@@ -3125,14 +3132,14 @@ C_KZG_RET get_samples(
     fr_t *samples_fr = NULL;
     g1_t *proofs_g1 = NULL;
 
-    (void)proofs;
+    size_t chunk_len = min(s->max_width / 2, 16);
 
     /* Allocate space fr-form arrays */
     ret = new_fr_array(&poly_2, s->max_width);
     if (ret != C_KZG_OK) goto out;
     ret = new_fr_array(&samples_fr, s->max_width);
     if (ret != C_KZG_OK) goto out;
-    ret = new_g1_array(&proofs_g1, s->max_width);
+    ret = new_g1_array(&proofs_g1, s->max_width / chunk_len);
     if (ret != C_KZG_OK) goto out;
 
     /* Initialize all of the polynomial fields to zero */
@@ -3148,8 +3155,6 @@ C_KZG_RET get_samples(
     if (ret != C_KZG_OK) goto out;
 
     FK20MultiSettings fk;
-    size_t chunk_len = min(s->max_width / 2, 16);
-    printf("chunk len: %zu\n", chunk_len);
     ret = new_fk20_multi_settings(&fk, s->max_width, chunk_len, s);
     if (ret != C_KZG_OK) goto out;
 
@@ -3229,46 +3234,38 @@ out:
 /**
  * Check a proof for a KZG commitment for evaluations `f(x * w^i) = y_i`.
  *
- * Given a @p commitment to a polynomial, a @p proof for @p x, and the claimed values @p y at values @p x `* w^i`,
- * verify the claim. Here, `w` is an `n`th root of unity.
+ * Given a @p commitment to a polynomial, a @p proof for @p x, and the claimed
+ * values @p y at values @p x `* w^i`, verify the claim. Here, `w` is an `n`th
+ * root of unity.
  *
  * @param[out] out        `true` if the proof is valid, `false` if not
  * @param[in]  commitment The commitment to a polynomial
- * @param[in]  proof      A proof of the value of the polynomial at the points @p x * w^i
+ * @param[in]  proof      A proof of the value of the polynomial at the points
+ * @p x * w^i
  * @param[in]  x          The generator x-value for the evaluation points
- * @param[in]  ys         The claimed value of the polynomial at the points @p x * w^i
- * @param[in]  n          The number of points at which to evaluate the polynomial, must be a power of two
- * @param[in]  ks         The settings containing the secrets, previously initialised with #new_kzg_settings
- * @retval C_CZK_OK      All is well
- * @retval C_CZK_BADARGS Invalid parameters were supplied
- * @retval C_CZK_ERROR   An internal error occurred
- * @retval C_CZK_MALLOC  Memory allocation failed
+ * @param[in]  ys         The claimed value of the polynomial at the points @p x
+ * * w^i
+ * @param[in]  n          The number of points at which to evaluate the
+ * polynomial, must be a power of two
+ * @param[in]  ks         The settings containing the secrets, previously
+ * initialised with #new_kzg_settings
  */
-C_KZG_RET verify_kzg_proof_multi(bool *out, const Bytes48 *commitment_bytes, const Bytes48 *proof_bytes, const Bytes32 *x_bytes, const Bytes32 *ys_bytes,
-                            size_t n, const KZGSettings *s) {
+C_KZG_RET verify_kzg_proof_multi_impl(
+    bool *out,
+    const g1_t *commitment,
+    const g1_t *proof,
+    const fr_t *x,
+    const fr_t *ys,
+    size_t n,
+    const KZGSettings *s
+) {
     C_KZG_RET ret;
     poly interp;
-    fr_t x, *ys = NULL, inv_x, inv_x_pow, x_pow;
+    fr_t inv_x, inv_x_pow, x_pow;
     g2_t xn2, xn_minus_yn;
     g1_t is1, commit_minus_interp;
-    g1_t commitment, proof;
 
     CHECK(is_power_of_two(n));
-
-    /* Convert untrusted inputs to trusted inputs */
-    ret = bytes_to_kzg_commitment(&commitment, commitment_bytes);
-    if (ret != C_KZG_OK) goto out;
-    ret = bytes_to_bls_field(&x, x_bytes);
-    if (ret != C_KZG_OK) goto out;
-    ret = bytes_to_kzg_proof(&proof, proof_bytes);
-    if (ret != C_KZG_OK) goto out;
-
-    ret = new_fr_array(&ys, n);
-    if (ret != C_KZG_OK) goto out;
-    for (size_t i = 0; i < n; i ++) {
-        ret = bytes_to_bls_field(&ys[i], &ys_bytes[i]);
-        if (ret != C_KZG_OK) goto out;
-    }
 
     // Interpolate at a coset.
     ret = new_poly(&interp, n);
@@ -3276,8 +3273,9 @@ C_KZG_RET verify_kzg_proof_multi(bool *out, const Bytes48 *commitment_bytes, con
     ret = ifft_fr(interp.coeffs, ys, n, s);
     if (ret != C_KZG_OK) goto out;
 
-    // Because it is a coset, not the subgroup, we have to multiply the polynomial coefficients by x^-i
-    blst_fr_eucl_inverse(&inv_x, &x);
+    // Because it is a coset, not the subgroup, we have to multiply the
+    // polynomial coefficients by x^-i
+    blst_fr_eucl_inverse(&inv_x, x);
     inv_x_pow = inv_x;
     for (uint64_t i = 1; i < n; i++) {
         blst_fr_mul(&interp.coeffs[i], &interp.coeffs[i], &inv_x_pow);
@@ -3295,12 +3293,74 @@ C_KZG_RET verify_kzg_proof_multi(bool *out, const Bytes48 *commitment_bytes, con
     ret = poly_to_kzg_commitment(&is1, interp.coeffs, n, s);
     if (ret != C_KZG_OK) return ret;
 
-    // [commitment - interpolation_polynomial(s)]_1 = [commit]_1 - [interpolation_polynomial(s)]_1
-    g1_sub(&commit_minus_interp, &commitment, &is1);
+    // [commitment - interpolation_polynomial(s)]_1 = [commit]_1 -
+    // [interpolation_polynomial(s)]_1
+    g1_sub(&commit_minus_interp, commitment, &is1);
 
-    *out = pairings_verify(&commit_minus_interp, blst_p2_generator(), &proof, &xn_minus_yn);
+    *out = pairings_verify(
+        &commit_minus_interp, blst_p2_generator(), proof, &xn_minus_yn
+    );
 
 out:
     free_poly(&interp);
+    return ret;
+}
+
+/**
+ */
+C_KZG_RET verify_samples_proof(
+    bool *ok,
+    const Bytes48 *commitment_bytes,
+    const Bytes48 *proof_bytes,
+    const Bytes32 *samples,
+    size_t n,
+    size_t index,
+    const KZGSettings *s
+) {
+    C_KZG_RET ret;
+    g1_t commitment, proof;
+    fr_t x, *ys = NULL;
+
+    *ok = false;
+
+    /* Do some sanity checks */
+    if (!is_power_of_two(n)) {
+        ret = C_KZG_BADARGS;
+        goto out;
+    }
+    if (index >= s->max_width / n) {
+        ret = C_KZG_BADARGS;
+        goto out;
+    }
+
+    /* Allocate array for fr-form samples */
+    ret = new_fr_array(&ys, n);
+    if (ret != C_KZG_OK) goto out;
+
+    /* Convert untrusted inputs */
+    ret = bytes_to_kzg_commitment(&commitment, commitment_bytes);
+    if (ret != C_KZG_OK) goto out;
+    ret = bytes_to_kzg_proof(&proof, proof_bytes);
+    if (ret != C_KZG_OK) goto out;
+    for (size_t i = 0; i < n; i++) {
+        ret = bytes_to_bls_field(&ys[i], &samples[i]);
+        if (ret != C_KZG_OK) goto out;
+    }
+
+    /* Calculate the input value value */
+    size_t chunk_len = min(s->max_width / 2, 16);
+    size_t num_chunks = s->max_width / chunk_len;
+    size_t pos = reverse_bits_limited(num_chunks, index);
+    x = s->expanded_roots_of_unity[pos];
+
+    /* Reorder ys */
+    ret = bit_reversal_permutation(ys, sizeof(ys[0]), n);
+    if (ret != C_KZG_OK) goto out;
+
+    /* Check the proof */
+    ret = verify_kzg_proof_multi_impl(ok, &commitment, &proof, &x, ys, n, s);
+
+out:
+    c_kzg_free(ys);
     return ret;
 }

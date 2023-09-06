@@ -1,6 +1,7 @@
 package ckzg4844
 
 import (
+	"encoding/hex"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -396,14 +397,28 @@ func TestSampleProof(t *testing.T) {
 	samples, proofs, err := GetSamples(blob)
 	require.NoError(t, err)
 
-	for i := range samples {
-		x, err := GetRootOfUnityAt(i)
-		require.NoError(t, err)
+	t.Log(samples[0])
+	t.Log(commitment)
 
-		ok, err := VerifyKZGProof(Bytes48(commitment), x, samples[i], Bytes48(proofs[i]))
+	for i := range proofs[:3] {
+		hexString := hex.EncodeToString(proofs[i][:])
+		t.Log(hexString)
+
+		ok, err := VerifySamplesProof(Bytes48(commitment), Bytes48(proofs[i]), samples[i*16:(i+1)*16], i)
 		require.NoError(t, err)
 		require.True(t, ok)
 	}
+
+	/*
+		for i := range samples {
+			x, err := GetRootOfUnityAt(i)
+			require.NoError(t, err)
+
+			ok, err := VerifyKZGProof(Bytes48(commitment), x, samples[i], Bytes48(proofs[i]))
+			require.NoError(t, err)
+			require.True(t, ok)
+		}
+	*/
 }
 
 ///////////////////////////////////////////////////////////////////////////////

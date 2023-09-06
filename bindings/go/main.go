@@ -354,7 +354,7 @@ func GetSamples(blob Blob) ([]Bytes32, []KZGProof, error) {
 		panic("trusted setup isn't loaded")
 	}
 	samples := make([]Bytes32, FieldElementsPerBlob*2)
-	proofs := make([]KZGProof, FieldElementsPerBlob*2)
+	proofs := make([]KZGProof, (FieldElementsPerBlob*2)/16)
 	ret := C.get_samples(
 		*(**C.Bytes32)(unsafe.Pointer(&samples)),
 		*(**C.KZGProof)(unsafe.Pointer(&proofs)),
@@ -440,4 +440,34 @@ func EvalAt(index int) (Bytes32, error) {
 		(*C.Bytes32)(unsafe.Pointer(&root)),
 		(*C.fr_t)(unsafe.Pointer(uintptr(unsafe.Pointer(settings.expanded_roots_of_unity))+uintptr(32*index))))
 	return root, nil
+}
+
+/*
+VerifySamplesProof is the binding for:
+
+	C_KZG_RET verify_samples_proof(
+	    bool *ok,
+	    const Bytes48 *commitment_bytes,
+	    const Bytes48 *proof_bytes,
+	    const Bytes32 *samples,
+	    size_t n,
+	    size_t index,
+	    const KZGSettings *s);
+*/
+func VerifySamplesProof(commitmentBytes, proofBytes Bytes48, samples []Bytes32, index int) (bool, error) {
+	if !loaded {
+		panic("trusted setup isn't loaded")
+	}
+
+	var result C.bool
+	ret := C.verify_samples_proof(
+		&result,
+		//(*C.Blob)(unsafe.Pointer(&blob)),
+		(*C.Bytes48)(unsafe.Pointer(&commitmentBytes)),
+		(*C.Bytes48)(unsafe.Pointer(&proofBytes)),
+		*(**C.Bytes32)(unsafe.Pointer(&samples)),
+		(C.size_t)(len(samples)),
+		(C.size_t)(index),
+		&settings)
+	return bool(result), makeErrorFromRet(ret)
 }
