@@ -76,7 +76,7 @@ static const char *RANDOM_CHALLENGE_KZG_BATCH_DOMAIN = "RCKZGBATCH___V1_";
 #define BYTES_PER_G2 96
 
 /** The number of g1 points in a trusted setup. */
-#define TRUSTED_SETUP_NUM_G1_POINTS (FIELD_ELEMENTS_PER_BLOB * 2)
+#define TRUSTED_SETUP_NUM_G1_POINTS FIELD_ELEMENTS_PER_BLOB
 
 /** The number of g2 points in a trusted setup. */
 #define TRUSTED_SETUP_NUM_G2_POINTS 65
@@ -1846,7 +1846,7 @@ C_KZG_RET LOAD_TRUSTED_SETUP(
     out->max_width = 1ULL << max_scale;
 
     /* For DAS reconstruction */
-    //out->max_width *= 2;
+    out->max_width *= 2;
 
     /* Allocate all of our arrays */
     ret = new_fr_array(&out->roots_of_unity, out->max_width);
@@ -1905,11 +1905,6 @@ C_KZG_RET LOAD_TRUSTED_SETUP(
     //if (ret != C_KZG_OK) goto out_error;
     ret = bit_reversal_permutation(out->g1_values_lagrange, sizeof(g1_t), n1);
     if (ret != C_KZG_OK) goto out_error;
-
-    /*
-    ret = bit_reversal_permutation(out->g1_values, sizeof(g1_t), n1);
-    if (ret != C_KZG_OK) goto out_error;
-    */
 
     goto out_success;
 
