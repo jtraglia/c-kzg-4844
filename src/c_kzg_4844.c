@@ -3332,33 +3332,6 @@ out:
     return ret;
 }
 
-#if 0
-static void eval_poly_2(fr_t *out, const fr_t *p, size_t len, const fr_t *x) {
-    fr_t tmp;
-    uint64_t i;
-
-    if (len == 0) {
-        *out = FR_ZERO;
-        return;
-    }
-
-    if (fr_is_zero(x)) {
-        *out = p[0];
-        return;
-    }
-
-    // Horner's method
-    *out = p[len - 1];
-    i = len - 2;
-    while (true) {
-        blst_fr_mul(&tmp, out, x);
-        blst_fr_add(out, &tmp, &p[i]);
-        if (i == 0) break;
-        --i;
-    }
-}
-#endif
-
 /**
  */
 C_KZG_RET verify_samples_proof(
