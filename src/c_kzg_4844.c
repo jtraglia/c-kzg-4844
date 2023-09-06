@@ -3173,6 +3173,9 @@ C_KZG_RET get_samples(
         bytes_from_bls_field(&samples[i], &samples_fr[i]);
     }
 
+    ret = bit_reversal_permutation(samples, sizeof(samples[0]), s->max_width);
+    if (ret != C_KZG_OK) goto out;
+
     /* Convert all of the proofs to byte-form */
     for (size_t i = 0; i < s->max_width / chunk_len; i++) {
         bytes_from_g1(&proofs[i], &proofs_g1[i]);
@@ -3306,10 +3309,38 @@ out:
     return ret;
 }
 
+#if 1
+static void eval_poly_2(fr_t *out, const fr_t *p, size_t len, const fr_t *x) {
+    fr_t tmp;
+    uint64_t i;
+
+    if (len == 0) {
+        *out = FR_ZERO;
+        return;
+    }
+
+    if (fr_is_zero(x)) {
+        *out = p[0];
+        return;
+    }
+
+    // Horner's method
+    *out = p[len - 1];
+    i = len - 2;
+    while (true) {
+        blst_fr_mul(&tmp, out, x);
+        blst_fr_add(out, &tmp, &p[i]);
+        if (i == 0) break;
+        --i;
+    }
+}
+#endif
+
 /**
  */
 C_KZG_RET verify_samples_proof(
     bool *ok,
+    const Blob *blob,
     const Bytes48 *commitment_bytes,
     const Bytes48 *proof_bytes,
     const Bytes32 *samples,
@@ -3356,6 +3387,52 @@ C_KZG_RET verify_samples_proof(
     /* Reorder ys */
     ret = bit_reversal_permutation(ys, sizeof(ys[0]), n);
     if (ret != C_KZG_OK) goto out;
+
+#if 1
+    fr_t *p = NULL, *ys2 = NULL;
+    ret = new_fr_array(&p, s->max_width);
+    if (ret != C_KZG_OK) goto out;
+    memset(p, 0, sizeof(fr_t) * s->max_width);
+    ret = blob_to_polynomial((Polynomial *)p, blob);
+    if (ret != C_KZG_OK) goto out;
+    ret = new_fr_array(&ys2, n);
+    if (ret != C_KZG_OK) goto out;
+
+    #if 0
+    for (size_t i = 0; i < chunk_len; i++) {
+        Bytes32 blah;
+        bytes_from_bls_field(&blah, &ys[i]);
+        printf("%zu: ", i);
+        for (size_t j = 0; j < 32; j++) {
+            printf("%02x", blah.bytes[j]);
+        }
+        printf("\n");
+    }
+    #endif
+
+    size_t stride = s->max_width / chunk_len;
+    for (size_t i = 0; i < chunk_len; i++) {
+        fr_t z;
+        blst_fr_mul(&z, &x, &s->expanded_roots_of_unity[i * stride]);
+        eval_poly_2(&ys2[i], p, FIELD_ELEMENTS_PER_BLOB * 2, &z);
+
+        #if 0
+        Bytes32 blah;
+        bytes_from_bls_field(&blah, &ys2[i]);
+        printf("ys2 %zu: ", i);
+        for (size_t j = 0; j < 32; j++) {
+            printf("%02x", blah.bytes[j]);
+        }
+        printf("\n");
+        #endif
+
+        if (!fr_equal(&ys[i], &ys2[i])) {
+            printf("not equal: %zu\n", i);
+            ret = C_KZG_BADARGS;
+            goto out;
+        }
+    }
+#endif
 
     /* Check the proof */
     ret = verify_kzg_proof_multi_impl(ok, &commitment, &proof, &x, ys, n, s);

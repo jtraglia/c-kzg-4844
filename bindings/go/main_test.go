@@ -400,11 +400,11 @@ func TestSampleProof(t *testing.T) {
 	t.Log(samples[0])
 	t.Log(commitment)
 
-	for i := range proofs[:3] {
+	for i := range proofs[:] {
 		hexString := hex.EncodeToString(proofs[i][:])
 		t.Log(hexString)
 
-		ok, err := VerifySamplesProof(Bytes48(commitment), Bytes48(proofs[i]), samples[i*16:(i+1)*16], i)
+		ok, err := VerifySamplesProof(blob, Bytes48(commitment), Bytes48(proofs[i]), samples[i*16:(i+1)*16], i)
 		require.NoError(t, err)
 		require.True(t, ok)
 	}
