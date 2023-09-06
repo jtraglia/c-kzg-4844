@@ -2017,7 +2017,6 @@ int main(void) {
     RUN(test_expand_root_of_unity__fails_not_root_of_unity);
     RUN(test_expand_root_of_unity__fails_wrong_root_of_unity);
     RUN(test_reconstruct__random_blob);
-    //RUN(test_blah);
 
     /*
      * These functions are only executed if we're profiling. To me, it makes

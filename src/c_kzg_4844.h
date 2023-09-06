@@ -170,6 +170,7 @@ typedef struct {
     /** G1 group elements from the trusted setup,
      * in Lagrange form bit-reversal permutation. */
     g1_t *g1_values;
+    g1_t *g1_values_lagrange;
     /** G2 group elements from the trusted setup. */
     g2_t *g2_values;
 } KZGSettings;

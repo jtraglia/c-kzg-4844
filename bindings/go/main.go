@@ -454,15 +454,13 @@ VerifySamplesProof is the binding for:
 	    size_t index,
 	    const KZGSettings *s);
 */
-func VerifySamplesProof(blob Blob, commitmentBytes, proofBytes Bytes48, samples []Bytes32, index int) (bool, error) {
+func VerifySamplesProof(commitmentBytes, proofBytes Bytes48, samples []Bytes32, index int) (bool, error) {
 	if !loaded {
 		panic("trusted setup isn't loaded")
 	}
-
 	var result C.bool
 	ret := C.verify_samples_proof(
 		&result,
-		(*C.Blob)(unsafe.Pointer(&blob)),
 		(*C.Bytes48)(unsafe.Pointer(&commitmentBytes)),
 		(*C.Bytes48)(unsafe.Pointer(&proofBytes)),
 		*(**C.Bytes32)(unsafe.Pointer(&samples)),

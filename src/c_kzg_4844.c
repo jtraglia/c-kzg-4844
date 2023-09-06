@@ -76,7 +76,7 @@ static const char *RANDOM_CHALLENGE_KZG_BATCH_DOMAIN = "RCKZGBATCH___V1_";
 #define BYTES_PER_G2 96
 
 /** The number of g1 points in a trusted setup. */
-#define TRUSTED_SETUP_NUM_G1_POINTS FIELD_ELEMENTS_PER_BLOB
+#define TRUSTED_SETUP_NUM_G1_POINTS (FIELD_ELEMENTS_PER_BLOB * 2)
 
 /** The number of g2 points in a trusted setup. */
 #define TRUSTED_SETUP_NUM_G2_POINTS 65
@@ -1481,7 +1481,7 @@ out:
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Trusted Setup Functions
+// FFT for G1 points
 ///////////////////////////////////////////////////////////////////////////////
 
 /**
@@ -1497,6 +1497,102 @@ out:
 static bool is_power_of_two(uint64_t n) {
     return (n & (n - 1)) == 0;
 }
+
+/**
+ * Fast Fourier Transform.
+ *
+ * Recursively divide and conquer.
+ *
+ * @param[out] out          The results (array of length @p n)
+ * @param[in]  in           The input data (array of length @p n * @p stride)
+ * @param[in]  stride       The input data stride
+ * @param[in]  roots        Roots of unity
+ *                          (array of length @p n * @p roots_stride)
+ * @param[in]  roots_stride The stride interval among the roots of unity
+ * @param[in]  n            Length of the FFT, must be a power of two
+ */
+static void fft_g1_fast(
+    g1_t *out,
+    const g1_t *in,
+    uint64_t stride,
+    const fr_t *roots,
+    uint64_t roots_stride,
+    uint64_t n
+) {
+    uint64_t half = n / 2;
+    if (half > 0) { /* Tunable parameter */
+        fft_g1_fast(out, in, stride * 2, roots, roots_stride * 2, half);
+        fft_g1_fast(
+            out + half, in + stride, stride * 2, roots, roots_stride * 2, half
+        );
+        for (uint64_t i = 0; i < half; i++) {
+            g1_t y_times_root;
+            if (fr_is_one(&roots[i * roots_stride])) {
+                /* Don't do the scalar multiplication if the scalar is one */
+                y_times_root = out[i + half];
+            } else {
+                g1_mul(&y_times_root, &out[i + half], &roots[i * roots_stride]);
+            }
+            g1_sub(&out[i + half], &out[i], &y_times_root);
+            blst_p1_add_or_double(&out[i], &out[i], &y_times_root);
+        }
+    } else {
+        *out = *in;
+    }
+}
+
+/**
+ * The entry point for forward FFT over G1 points.
+ *
+ * @param[out]  out The results (array of length n)
+ * @param[in]   in  The input data (array of length n)
+ * @param[in]   n   Length of the arrays
+ * @param[in]   s   The trusted setup
+ *
+ * @remark The array lengths must be a power of two.
+ * @remark Use ifft_g1 for inverse transformation.
+ */
+C_KZG_RET fft_g1(g1_t *out, const g1_t *in, size_t n, const KZGSettings *s) {
+    CHECK(n <= s->max_width);
+    CHECK(is_power_of_two(n));
+
+    uint64_t stride = s->max_width / n;
+    fft_g1_fast(out, in, 1, s->expanded_roots_of_unity, stride, n);
+
+    return C_KZG_OK;
+}
+
+/**
+ * The entry point for inverse FFT over G1 points.
+ *
+ * @param[out]  out The results (array of length n)
+ * @param[in]   in  The input data (array of length n)
+ * @param[in]   n   Length of the arrays
+ * @param[in]   s   The trusted setup
+ *
+ * @remark The array lengths must be a power of two.
+ * @remark Use fft_g1 for forward transformation.
+ */
+C_KZG_RET ifft_g1(g1_t *out, const g1_t *in, size_t n, const KZGSettings *s) {
+    CHECK(n <= s->max_width);
+    CHECK(is_power_of_two(n));
+
+    uint64_t stride = s->max_width / n;
+    fft_g1_fast(out, in, 1, s->reverse_roots_of_unity, stride, n);
+
+    fr_t inv_len;
+    fr_from_uint64(&inv_len, n);
+    blst_fr_eucl_inverse(&inv_len, &inv_len);
+    for (uint64_t i = 0; i < n; i++) {
+        g1_mul(&out[i], &out[i], &inv_len);
+    }
+
+    return C_KZG_OK;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Trusted Setup Functions
+///////////////////////////////////////////////////////////////////////////////
 
 /**
  * Reverse the bit order in a 32 bit integer.
@@ -1676,9 +1772,11 @@ void FREE_TRUSTED_SETUP(KZGSettings *s) {
     s->max_width = 0;
     c_kzg_free(s->roots_of_unity);
     c_kzg_free(s->g1_values);
+    c_kzg_free(s->g1_values_lagrange);
     c_kzg_free(s->g2_values);
 }
 
+#if 0
 /**
  * Basic sanity check that the trusted setup was loaded in Lagrange form.
  *
@@ -1705,6 +1803,7 @@ static C_KZG_RET is_trusted_setup_in_lagrange_form(
     );
     return is_monomial_form ? C_KZG_BADARGS : C_KZG_OK;
 }
+#endif
 
 /**
  * Load trusted setup into a KZGSettings.
@@ -1731,6 +1830,7 @@ C_KZG_RET LOAD_TRUSTED_SETUP(
     out->expanded_roots_of_unity = NULL;
     out->reverse_roots_of_unity = NULL;
     out->g1_values = NULL;
+    out->g1_values_lagrange = NULL;
     out->g2_values = NULL;
 
     /* Sanity check in case this is called directly */
@@ -1746,7 +1846,7 @@ C_KZG_RET LOAD_TRUSTED_SETUP(
     out->max_width = 1ULL << max_scale;
 
     /* For DAS reconstruction */
-    out->max_width *= 2;
+    //out->max_width *= 2;
 
     /* Allocate all of our arrays */
     ret = new_fr_array(&out->roots_of_unity, out->max_width);
@@ -1756,6 +1856,8 @@ C_KZG_RET LOAD_TRUSTED_SETUP(
     ret = new_fr_array(&out->reverse_roots_of_unity, out->max_width + 1);
     if (ret != C_KZG_OK) goto out_error;
     ret = new_g1_array(&out->g1_values, n1);
+    if (ret != C_KZG_OK) goto out_error;
+    ret = new_g1_array(&out->g1_values_lagrange, n1);
     if (ret != C_KZG_OK) goto out_error;
     ret = new_g2_array(&out->g2_values, n2);
     if (ret != C_KZG_OK) goto out_error;
@@ -1787,14 +1889,27 @@ C_KZG_RET LOAD_TRUSTED_SETUP(
     }
 
     /* Make sure the trusted setup was loaded in Lagrange form */
+    #if 0
     ret = is_trusted_setup_in_lagrange_form(out, n1, n2);
     if (ret != C_KZG_OK) goto out_error;
+    #endif
 
     /* Compute roots of unity and permute the G1 trusted setup */
     ret = compute_roots_of_unity(out);
     if (ret != C_KZG_OK) goto out_error;
+
+    ret = ifft_g1(out->g1_values_lagrange, out->g1_values, n1, out);
+    if (ret != C_KZG_OK) goto out_error;
+
+    //ret = bit_reversal_permutation(out->g1_values, sizeof(g1_t), n1);
+    //if (ret != C_KZG_OK) goto out_error;
+    ret = bit_reversal_permutation(out->g1_values_lagrange, sizeof(g1_t), n1);
+    if (ret != C_KZG_OK) goto out_error;
+
+    /*
     ret = bit_reversal_permutation(out->g1_values, sizeof(g1_t), n1);
     if (ret != C_KZG_OK) goto out_error;
+    */
 
     goto out_success;
 
@@ -1951,98 +2066,6 @@ static C_KZG_RET ifft_fr(
     for (size_t i = 0; i < n; i++) {
         blst_fr_mul(&out[i], &out[i], &inv_len);
     }
-    return C_KZG_OK;
-}
-
-/**
- * Fast Fourier Transform.
- *
- * Recursively divide and conquer.
- *
- * @param[out] out          The results (array of length @p n)
- * @param[in]  in           The input data (array of length @p n * @p stride)
- * @param[in]  stride       The input data stride
- * @param[in]  roots        Roots of unity
- *                          (array of length @p n * @p roots_stride)
- * @param[in]  roots_stride The stride interval among the roots of unity
- * @param[in]  n            Length of the FFT, must be a power of two
- */
-static void fft_g1_fast(
-    g1_t *out,
-    const g1_t *in,
-    uint64_t stride,
-    const fr_t *roots,
-    uint64_t roots_stride,
-    uint64_t n
-) {
-    uint64_t half = n / 2;
-    if (half > 0) { /* Tunable parameter */
-        fft_g1_fast(out, in, stride * 2, roots, roots_stride * 2, half);
-        fft_g1_fast(
-            out + half, in + stride, stride * 2, roots, roots_stride * 2, half
-        );
-        for (uint64_t i = 0; i < half; i++) {
-            g1_t y_times_root;
-            if (fr_is_one(&roots[i * roots_stride])) {
-                /* Don't do the scalar multiplication if the scalar is one */
-                y_times_root = out[i + half];
-            } else {
-                g1_mul(&y_times_root, &out[i + half], &roots[i * roots_stride]);
-            }
-            g1_sub(&out[i + half], &out[i], &y_times_root);
-            blst_p1_add_or_double(&out[i], &out[i], &y_times_root);
-        }
-    } else {
-        *out = *in;
-    }
-}
-
-/**
- * The entry point for forward FFT over G1 points.
- *
- * @param[out]  out The results (array of length n)
- * @param[in]   in  The input data (array of length n)
- * @param[in]   n   Length of the arrays
- * @param[in]   s   The trusted setup
- *
- * @remark The array lengths must be a power of two.
- * @remark Use ifft_g1 for inverse transformation.
- */
-C_KZG_RET fft_g1(g1_t *out, const g1_t *in, size_t n, const KZGSettings *s) {
-    CHECK(n <= s->max_width);
-    CHECK(is_power_of_two(n));
-
-    uint64_t stride = s->max_width / n;
-    fft_g1_fast(out, in, 1, s->expanded_roots_of_unity, stride, n);
-
-    return C_KZG_OK;
-}
-
-/**
- * The entry point for inverse FFT over G1 points.
- *
- * @param[out]  out The results (array of length n)
- * @param[in]   in  The input data (array of length n)
- * @param[in]   n   Length of the arrays
- * @param[in]   s   The trusted setup
- *
- * @remark The array lengths must be a power of two.
- * @remark Use fft_g1 for forward transformation.
- */
-C_KZG_RET ifft_g1(g1_t *out, const g1_t *in, size_t n, const KZGSettings *s) {
-    CHECK(n <= s->max_width);
-    CHECK(is_power_of_two(n));
-
-    uint64_t stride = s->max_width / n;
-    fft_g1_fast(out, in, 1, s->reverse_roots_of_unity, stride, n);
-
-    fr_t inv_len;
-    fr_from_uint64(&inv_len, n);
-    blst_fr_eucl_inverse(&inv_len, &inv_len);
-    for (uint64_t i = 0; i < n; i++) {
-        g1_mul(&out[i], &out[i], &inv_len);
-    }
-
     return C_KZG_OK;
 }
 
@@ -3309,7 +3332,7 @@ out:
     return ret;
 }
 
-#if 1
+#if 0
 static void eval_poly_2(fr_t *out, const fr_t *p, size_t len, const fr_t *x) {
     fr_t tmp;
     uint64_t i;
@@ -3340,7 +3363,6 @@ static void eval_poly_2(fr_t *out, const fr_t *p, size_t len, const fr_t *x) {
  */
 C_KZG_RET verify_samples_proof(
     bool *ok,
-    const Blob *blob,
     const Bytes48 *commitment_bytes,
     const Bytes48 *proof_bytes,
     const Bytes32 *samples,
@@ -3378,7 +3400,7 @@ C_KZG_RET verify_samples_proof(
         if (ret != C_KZG_OK) goto out;
     }
 
-    /* Calculate the input value value */
+    /* Calculate the input value */
     size_t chunk_len = min(s->max_width / 2, 16);
     size_t num_chunks = s->max_width / chunk_len;
     size_t pos = reverse_bits_limited(num_chunks, index);
@@ -3387,52 +3409,6 @@ C_KZG_RET verify_samples_proof(
     /* Reorder ys */
     ret = bit_reversal_permutation(ys, sizeof(ys[0]), n);
     if (ret != C_KZG_OK) goto out;
-
-#if 1
-    fr_t *p = NULL, *ys2 = NULL;
-    ret = new_fr_array(&p, s->max_width);
-    if (ret != C_KZG_OK) goto out;
-    memset(p, 0, sizeof(fr_t) * s->max_width);
-    ret = blob_to_polynomial((Polynomial *)p, blob);
-    if (ret != C_KZG_OK) goto out;
-    ret = new_fr_array(&ys2, n);
-    if (ret != C_KZG_OK) goto out;
-
-    #if 0
-    for (size_t i = 0; i < chunk_len; i++) {
-        Bytes32 blah;
-        bytes_from_bls_field(&blah, &ys[i]);
-        printf("%zu: ", i);
-        for (size_t j = 0; j < 32; j++) {
-            printf("%02x", blah.bytes[j]);
-        }
-        printf("\n");
-    }
-    #endif
-
-    size_t stride = s->max_width / chunk_len;
-    for (size_t i = 0; i < chunk_len; i++) {
-        fr_t z;
-        blst_fr_mul(&z, &x, &s->expanded_roots_of_unity[i * stride]);
-        eval_poly_2(&ys2[i], p, FIELD_ELEMENTS_PER_BLOB * 2, &z);
-
-        #if 0
-        Bytes32 blah;
-        bytes_from_bls_field(&blah, &ys2[i]);
-        printf("ys2 %zu: ", i);
-        for (size_t j = 0; j < 32; j++) {
-            printf("%02x", blah.bytes[j]);
-        }
-        printf("\n");
-        #endif
-
-        if (!fr_equal(&ys[i], &ys2[i])) {
-            printf("not equal: %zu\n", i);
-            ret = C_KZG_BADARGS;
-            goto out;
-        }
-    }
-#endif
 
     /* Check the proof */
     ret = verify_kzg_proof_multi_impl(ok, &commitment, &proof, &x, ys, n, s);
