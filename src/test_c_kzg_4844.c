@@ -44,6 +44,25 @@ static void get_rand_bytes32(Bytes32 *out) {
     seed++;
 }
 
+#if 0
+static size_t get_rand_index(size_t max) {
+    Bytes32 data;
+    get_rand_bytes32(&data);
+    size_t value = *(size_t *)data.bytes;
+    return value % max;
+}
+
+static void shuffle_bytes32_array(Bytes32 *arr, size_t n) {
+    for (size_t i = n - 1; i > 0; i--) {
+        size_t j = get_rand_index(i + 1);
+        Bytes32 tmp;
+        memcpy(tmp.bytes, arr[i].bytes, 32);
+        memcpy(arr[i].bytes, arr[j].bytes, 32);
+        memcpy(arr[j].bytes, tmp.bytes, 32);
+    }
+}
+#endif
+
 static void get_rand_field_element(Bytes32 *out) {
     fr_t tmp_fr;
     Bytes32 tmp_bytes;
@@ -1727,6 +1746,67 @@ static void test_expand_root_of_unity__fails_wrong_root_of_unity(void) {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// Tests for reconstruction
+///////////////////////////////////////////////////////////////////////////////
+
+static void test_reconstruct__random_blob(void) {
+    C_KZG_RET ret;
+    Blob blob;
+    size_t n = s.max_width;
+    Bytes32 *samples = NULL;
+    Bytes32 *partial = NULL;
+    Bytes32 *recovered = NULL;
+    KZGProof *proofs = NULL;
+    int diff;
+
+    /* Allocate arrays */
+    ret = c_kzg_calloc((void **)&samples, n, sizeof(Bytes32));
+    ASSERT_EQUALS(ret, C_KZG_OK);
+    ret = c_kzg_calloc((void **)&partial, n, sizeof(Bytes32));
+    ASSERT_EQUALS(ret, C_KZG_OK);
+    ret = c_kzg_calloc((void **)&recovered, n, sizeof(Bytes32));
+    ASSERT_EQUALS(ret, C_KZG_OK);
+    ret = c_kzg_calloc((void **)&proofs, n, sizeof(KZGProof));
+    ASSERT_EQUALS(ret, C_KZG_OK);
+
+    /* Get a random blob */
+    get_rand_blob(&blob);
+
+    /* Get the samples and proofs */
+    ret = get_samples_and_proofs(samples, proofs, &blob, &s);
+    ASSERT_EQUALS(ret, C_KZG_OK);
+
+    /* Erase half of the samples */
+    for (size_t i = 0; i < s.max_width; i++) {
+        if (i % 2 == 0) {
+            partial[i] = samples[i];
+        } else {
+            /* To mark as missing, set all bits */
+            memset(&partial[i].bytes, 0xff, 32);
+        }
+    }
+
+    /* Reconstruct with half of the samples */
+    ret = recover_samples(recovered, partial, &s);
+    ASSERT_EQUALS(ret, C_KZG_OK);
+
+    /* Check that all of the samples match */
+    for (size_t i = 0; i < n; i++) {
+        diff = memcmp(samples[i].bytes, recovered[i].bytes, sizeof(Bytes32));
+        ASSERT_EQUALS(diff, 0);
+    }
+
+    /* Recover the blob from the recovered samples */
+    Blob recovered_blob;
+    ret = samples_to_blob(&recovered_blob, recovered, &s);
+    ASSERT_EQUALS(ret, C_KZG_OK);
+
+    /* Ensure the blobs are the same */
+    diff = memcmp(blob.bytes, recovered_blob.bytes, sizeof(Blob));
+    ASSERT_EQUALS(diff, 0);
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // Profiling Functions
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -1936,6 +2016,7 @@ int main(void) {
     RUN(test_expand_root_of_unity__succeeds_with_root);
     RUN(test_expand_root_of_unity__fails_not_root_of_unity);
     RUN(test_expand_root_of_unity__fails_wrong_root_of_unity);
+    RUN(test_reconstruct__random_blob);
 
     /*
      * These functions are only executed if we're profiling. To me, it makes

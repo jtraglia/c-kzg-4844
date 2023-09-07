@@ -159,17 +159,15 @@ typedef enum {
  * Stores the setup and parameters needed for computing KZG proofs.
  */
 typedef struct {
-    /** The length of `roots_of_unity`, a power of 2. */
     uint64_t max_width;
-    /** Powers of the primitive root of unity determined by
-     * `SCALE2_ROOT_OF_UNITY` in bit-reversal permutation order,
-     * length `max_width`. */
     fr_t *roots_of_unity;
-    /** G1 group elements from the trusted setup,
-     * in Lagrange form bit-reversal permutation. */
+    fr_t *expanded_roots_of_unity;
+    fr_t *reverse_roots_of_unity;
     g1_t *g1_values;
-    /** G2 group elements from the trusted setup. */
+    g1_t *g1_values_lagrange;
     g2_t *g2_values;
+    uint64_t chunk_len;
+    g1_t **x_ext_fft_files;
 } KZGSettings;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -230,6 +228,28 @@ C_KZG_RET VERIFY_BLOB_KZG_PROOF_BATCH(
     const Bytes48 *commitments_bytes,
     const Bytes48 *proofs_bytes,
     size_t n,
+    const KZGSettings *s
+);
+
+C_KZG_RET get_samples_and_proofs(
+    Bytes32 *samples, KZGProof *proofs, const Blob *blob, const KZGSettings *s
+);
+
+C_KZG_RET samples_to_blob(
+    Blob *blob, const Bytes32 *samples, const KZGSettings *s
+);
+
+C_KZG_RET recover_samples(
+    Bytes32 *recovered, const Bytes32 *samples, const KZGSettings *s
+);
+
+C_KZG_RET verify_samples_proof(
+    bool *ok,
+    const Bytes48 *commitment_bytes,
+    const Bytes48 *proof_bytes,
+    const Bytes32 *samples,
+    size_t n,
+    size_t index,
     const KZGSettings *s
 );
 
