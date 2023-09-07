@@ -156,6 +156,7 @@ static const fr_t FR_ONE = {
     0x00000001fffffffeL, 0x5884b7fa00034802L,
     0x998c4fefecbc4ff5L, 0x1824b159acc5056fL};
 
+/** This used to represent a missing element. It's a invalid value. */
 static const fr_t FR_NULL = {
     0xffffffffffffffffL, 0xffffffffffffffffL,
     0xffffffffffffffffL, 0xffffffffffffffffL};
@@ -1619,8 +1620,18 @@ static int log2_pow2(uint32_t n) {
     return position;
 }
 
+/**
+ * Reverse the low-order bits in a 32-bit integer.
+ *
+ * @remark n must be a power of two.
+ *
+ * @param[in]   n       To reverse `b` bits, set `n = 2 ^ b`
+ * @param[in]   value   The bits to be reversed
+ *
+ * @return The reversal of the lowest log_2(n) bits of the input value
+ */
 static uint32_t reverse_bits_limited(uint32_t n, uint32_t value) {
-    int unused_bit_len = 32 - log2_pow2(n);
+    size_t unused_bit_len = 32 - log2_pow2(n);
     return reverse_bits(value) >> unused_bit_len;
 }
 
@@ -1779,22 +1790,11 @@ static C_KZG_RET toeplitz_part_1(
 );
 
 /**
- * Initialise settings for an FK20 multi proof.
+ * Initialize fields for FK20 multi-proof computations.
  *
- * @remark As with all functions prefixed `new_`, this allocates memory that
- * needs to be reclaimed by calling the corresponding `free_` function. In this
- * case, #free_fk20_multi_settings.
- *
- * @param[out] fk The initialised settings
- * @param[in]  n2 The desired size of `x_ext_fft`, a power of two
- * @param[in]  chunk_len TODO
- * @param[in]  ks KZGSettings that have already been initialised
- * @retval C_CZK_OK      All is well
- * @retval C_CZK_BADARGS Invalid parameters were supplied
- * @retval C_CZK_ERROR   An internal error occurred
- * @retval C_CZK_MALLOC  Memory allocation failed
+ * @param[out]  s   Pointer to KZGSettings to initialize
  */
-C_KZG_RET init_fk20_multi_settings(KZGSettings *s) {
+static C_KZG_RET init_fk20_multi_settings(KZGSettings *s) {
     C_KZG_RET ret;
     uint64_t n, k;
     g1_t *x = NULL;
@@ -1933,9 +1933,9 @@ C_KZG_RET LOAD_TRUSTED_SETUP(
 
 out_error:
     /*
-     * Note: this only frees the fields in the KZGSettings structure
-     * (roots_of_unity, g1_values, g2_values). It does not free the KZGSettings
-     * structure memory. If necessary, that must be done by the caller.
+     * Note: this only frees the fields in the KZGSettings structure. It does
+     * not free the KZGSettings structure memory. If necessary, that must be
+     * done by the caller.
      */
     FREE_TRUSTED_SETUP(out);
 out_success:
@@ -2117,7 +2117,6 @@ static void free_poly(poly *p) {
  */
 static inline uint64_t next_power_of_two(uint64_t v) {
     if (v == 0) return 1;
-
     v--;
     v |= v >> 1;
     v |= v >> 2;
@@ -2126,7 +2125,6 @@ static inline uint64_t next_power_of_two(uint64_t v) {
     v |= v >> 16;
     v |= v >> 32;
     v++;
-
     return v;
 }
 
@@ -2819,95 +2817,6 @@ static C_KZG_RET toeplitz_coeffs_stride(
 }
 
 /**
- * Reorder and extend polynomial coefficients for the toeplitz method.
- *
- * @remark The upper half of the input polynomial coefficients is treated as
- * being zero.
- *
- * @param[out] out The reordered polynomial, size `n * 2`
- * @param[in]  in  The input polynomial, size `n`
- * @retval C_CZK_OK      All is well
- * @retval C_CZK_MALLOC  Memory allocation failed
- */
-static C_KZG_RET toeplitz_coeffs_step(poly *out, const poly *in) {
-    return toeplitz_coeffs_stride(out, in, 0, 1);
-}
-
-/**
- * FK20 Method to compute all proofs - multi proof method
- *
- * Toeplitz multiplication as per
- * http://www.netlib.org/utk/people/JackDongarra/etemplates/node384.html
- *
- * For a polynomial of size `n`, let `w` be a `n`th root of unity. Then this
- * method will return `k = n / l` KZG proofs for the points:
- *
- * ```
- * proof[0]: w^(0*l + 0), w^(0*l + 1), ... w^(0*l + l - 1)
- * proof[1]: w^(1*l + 0), w^(1*l + 1), ... w^(1*l + l - 1)
- * ...
- * proof[i]: w^(i*l + 0), w^(i*l + 1), ... w^(i*l + l - 1)
- * ```
- *
- * @param[out] out The proofs, array size @p p->length * 2
- * @param[in]  p   The polynomial
- * @param[in]  fk  FK20 multi settings previously initialised by
- * #new_fk20_multi_settings
- */
-C_KZG_RET fk20_compute_proof_multi(
-    g1_t *out, const poly *p, const KZGSettings *s
-) {
-    C_KZG_RET ret;
-    uint64_t n = p->length, n2 = n * 2;
-    g1_t *h_ext_fft = NULL, *h_ext_fft_file = NULL, *h = NULL;
-    poly toeplitz_coeffs;
-
-    CHECK(s->max_width >= n2);
-
-    ret = new_g1_array(&h_ext_fft, n2);
-    if (ret != C_KZG_OK) goto out;
-
-    for (uint64_t i = 0; i < n2; i++) {
-        h_ext_fft[i] = G1_IDENTITY;
-    }
-
-    ret = new_poly(&toeplitz_coeffs, 2 * p->length);
-    if (ret != C_KZG_OK) goto out;
-    ret = new_g1_array(&h_ext_fft_file, toeplitz_coeffs.length);
-    if (ret != C_KZG_OK) goto out;
-
-    for (uint64_t i = 0; i < s->chunk_len; i++) {
-        ret = toeplitz_coeffs_step(&toeplitz_coeffs, p);
-        if (ret != C_KZG_OK) goto out;
-        ret = toeplitz_part_2(
-            h_ext_fft_file, &toeplitz_coeffs, s->x_ext_fft_files[i], s
-        );
-        if (ret != C_KZG_OK) goto out;
-
-        for (uint64_t j = 0; j < n2; j++) {
-            blst_p1_add_or_double(
-                &h_ext_fft[j], &h_ext_fft[j], &h_ext_fft_file[j]
-            );
-        }
-    }
-
-    ret = new_g1_array(&h, n2);
-    if (ret != C_KZG_OK) goto out;
-    ret = toeplitz_part_3(h, h_ext_fft, n2, s);
-    if (ret != C_KZG_OK) goto out;
-
-    ret = fft_g1(out, h, n2, s);
-    if (ret != C_KZG_OK) goto out;
-
-out:
-    c_kzg_free(h_ext_fft);
-    c_kzg_free(h);
-    free_poly(&toeplitz_coeffs);
-    c_kzg_free(h_ext_fft_file);
-    return ret;
-}
-
-/**
  * FK20 multi-proof method, optimized for data availability where the top half
  * of polynomial coefficients is zero.
  *
@@ -2982,13 +2891,10 @@ out:
 }
 
 /**
- * Computes all the KZG proofs for data availability checks.
- *
- * This involves sampling on the double domain and reordering according to
- * reverse bit order.
- *
+ * Computes all the KZG proofs for data availability checks. This involves
+ * sampling on the double domain and reordering according to reverse bit order.
  */
-C_KZG_RET da_using_fk20_multi(g1_t *out, const poly *p, const KZGSettings *s) {
+static C_KZG_RET da_using_fk20_multi(g1_t *out, const poly *p, const KZGSettings *s) {
     C_KZG_RET ret;
     uint64_t n = p->length, n2 = n * 2;
 
@@ -3023,7 +2929,7 @@ out:
  * @param[in]  ks         The settings containing the secrets, previously
  * initialised with #new_kzg_settings
  */
-C_KZG_RET verify_kzg_proof_multi_impl(
+static C_KZG_RET verify_kzg_proof_multi_impl(
     bool *out,
     const g1_t *commitment,
     const g1_t *proof,
