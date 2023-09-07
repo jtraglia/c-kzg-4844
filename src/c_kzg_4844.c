@@ -2715,20 +2715,9 @@ out:
     return ret;
 }
 
-///////////
-// FK20
-//////////
-
-/**
- * Stores the setup and parameters needed for computing FK20 multi proofs.
- */
-typedef struct {
-    const KZGSettings
-        *ks; /**< The corresponding settings for performing KZG proofs */
-    uint64_t chunk_len;     /**< TODO */
-    g1_t **x_ext_fft_files; /**< TODO */
-    uint64_t length;        /**< TODO */
-} FK20MultiSettings;
+///////////////////////////////////////////////////////////////////////////////
+// Sample Proofs
+///////////////////////////////////////////////////////////////////////////////
 
 /**
  * The first part of the Toeplitz matrix multiplication algorithm: the Fourier
@@ -3224,14 +3213,12 @@ C_KZG_RET get_samples(
     fr_t *samples_fr = NULL;
     g1_t *proofs_g1 = NULL;
 
-    size_t chunk_len = min(s->max_width / 2, 16);
-
     /* Allocate space fr-form arrays */
     ret = new_fr_array(&poly_2, s->max_width);
     if (ret != C_KZG_OK) goto out;
     ret = new_fr_array(&samples_fr, s->max_width);
     if (ret != C_KZG_OK) goto out;
-    ret = new_g1_array(&proofs_g1, s->max_width / chunk_len);
+    ret = new_g1_array(&proofs_g1, s->max_width / s->chunk_len);
     if (ret != C_KZG_OK) goto out;
 
     /* Initialize all of the polynomial fields to zero */
@@ -3265,7 +3252,7 @@ C_KZG_RET get_samples(
     if (ret != C_KZG_OK) goto out;
 
     /* Convert all of the proofs to byte-form */
-    for (size_t i = 0; i < s->max_width / chunk_len; i++) {
+    for (size_t i = 0; i < s->max_width / s->chunk_len; i++) {
         bytes_from_g1(&proofs[i], &proofs_g1[i]);
     }
 
@@ -3340,11 +3327,11 @@ C_KZG_RET verify_samples_proof(
     *ok = false;
 
     /* Do some sanity checks */
-    if (!is_power_of_two(n)) {
+    if (n != s->chunk_len) {
         ret = C_KZG_BADARGS;
         goto out;
     }
-    if (index >= s->max_width / n) {
+    if (index >= s->max_width / s->chunk_len) {
         ret = C_KZG_BADARGS;
         goto out;
     }
@@ -3364,8 +3351,7 @@ C_KZG_RET verify_samples_proof(
     }
 
     /* Calculate the input value */
-    size_t chunk_len = min(s->max_width / 2, 16);
-    size_t num_chunks = s->max_width / chunk_len;
+    size_t num_chunks = s->max_width / s->chunk_len;
     size_t pos = reverse_bits_limited(num_chunks, index);
     x = s->expanded_roots_of_unity[pos];
 
