@@ -1772,8 +1772,8 @@ static void test_reconstruct__random_blob(void) {
     /* Get a random blob */
     get_rand_blob(&blob);
 
-    /* Get the samples */
-    ret = get_samples(samples, proofs, &blob, &s);
+    /* Get the samples and proofs */
+    ret = get_samples_and_proofs(samples, proofs, &blob, &s);
     ASSERT_EQUALS(ret, C_KZG_OK);
 
     /* Erase half of the samples */

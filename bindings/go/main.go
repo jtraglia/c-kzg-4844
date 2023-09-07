@@ -342,20 +342,21 @@ func VerifyBlobKZGProofBatch(blobs []Blob, commitmentsBytes, proofsBytes []Bytes
 }
 
 /*
-GetSamples is the binding for:
+GetSamplesAndProofs is the binding for:
 
-	C_KZG_RET get_samples(
+	C_KZG_RET get_samples_and_proofs(
 	    Bytes32 *samples,
+	    KZGProof *proofs,
 	    const Blob *blob,
 	    const KZGSettings *s);
 */
-func GetSamples(blob Blob) ([]Bytes32, []KZGProof, error) {
+func GetSamplesAndProofs(blob Blob) ([]Bytes32, []KZGProof, error) {
 	if !loaded {
 		panic("trusted setup isn't loaded")
 	}
 	samples := make([]Bytes32, FieldElementsPerBlob*2)
 	proofs := make([]KZGProof, (FieldElementsPerBlob*2)/16)
-	ret := C.get_samples(
+	ret := C.get_samples_and_proofs(
 		*(**C.Bytes32)(unsafe.Pointer(&samples)),
 		*(**C.KZGProof)(unsafe.Pointer(&proofs)),
 		(*C.Blob)(unsafe.Pointer(&blob)),
@@ -407,39 +408,6 @@ func SamplesToBlob(samples []Bytes32) (Blob, error) {
 		*(**C.Bytes32)(unsafe.Pointer(&samples)),
 		&settings)
 	return blob, makeErrorFromRet(ret)
-}
-
-func GetRootOfUnityAt(index int) (Bytes32, error) {
-	if !loaded {
-		panic("trusted setup isn't loaded")
-	}
-	root := Bytes32{}
-	if index < 0 || index > int(settings.max_width) {
-		return root, ErrBadArgs
-	}
-	C.bytes_from_bls_field(
-		(*C.Bytes32)(unsafe.Pointer(&root)),
-		(*C.fr_t)(unsafe.Pointer(uintptr(unsafe.Pointer(settings.expanded_roots_of_unity))+uintptr(32*index))))
-	return root, nil
-}
-
-func EvalAt(index int) (Bytes32, error) {
-	if !loaded {
-		panic("trusted setup isn't loaded")
-	}
-	eval := Bytes32{}
-	if index < 0 || index > int(settings.max_width) {
-		return eval, ErrBadArgs
-	}
-	root, err := GetRootOfUnityAt(index)
-	if err != nil {
-		return eval, ErrBadArgs
-	}
-
-	C.bytes_from_bls_field(
-		(*C.Bytes32)(unsafe.Pointer(&root)),
-		(*C.fr_t)(unsafe.Pointer(uintptr(unsafe.Pointer(settings.expanded_roots_of_unity))+uintptr(32*index))))
-	return root, nil
 }
 
 /*

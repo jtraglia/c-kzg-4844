@@ -3192,7 +3192,7 @@ out:
 }
 
 /**
- * Given a blob, get 2n samples.
+ * Given a blob, get 2n samples and 2n/16 proofs.
  *
  * @param[out]  samples A preallocated array for samples
  * @param[out]  proofs  A preallocated array for sample proofs
@@ -3201,11 +3201,12 @@ out:
  *
  * @remark Where n is the number of fields in the blob.
  * @remark If a blob has 4096 fields, there will be 8192 samples.
+ * @remark If a blob has 4096 fields, there will be 512 proofs.
  * @remark Use samples_to_blob to convert the samples into a blob.
  * @remark Up to half of these samples may be lost.
  * @remark Use recover_samples to recover missing samples.
  */
-C_KZG_RET get_samples(
+C_KZG_RET get_samples_and_proofs(
     Bytes32 *samples, KZGProof *proofs, const Blob *blob, const KZGSettings *s
 ) {
     C_KZG_RET ret;

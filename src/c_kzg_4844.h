@@ -231,7 +231,7 @@ C_KZG_RET VERIFY_BLOB_KZG_PROOF_BATCH(
     const KZGSettings *s
 );
 
-C_KZG_RET get_samples(
+C_KZG_RET get_samples_and_proofs(
     Bytes32 *samples, KZGProof *proofs, const Blob *blob, const KZGSettings *s
 );
 
@@ -241,6 +241,16 @@ C_KZG_RET recover_samples(
 
 C_KZG_RET samples_to_blob(
     Blob *blob, const Bytes32 *samples, const KZGSettings *s
+);
+
+C_KZG_RET verify_samples_proof(
+    bool *ok,
+    const Bytes48 *commitment_bytes,
+    const Bytes48 *proof_bytes,
+    const Bytes32 *samples,
+    size_t n,
+    size_t index,
+    const KZGSettings *s
 );
 
 #ifdef __cplusplus

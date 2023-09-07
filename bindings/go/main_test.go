@@ -392,7 +392,7 @@ func TestSampleProof(t *testing.T) {
 
 	commitment, err := BlobToKZGCommitment(blob)
 	require.NoError(t, err)
-	samples, proofs, err := GetSamples(blob)
+	samples, proofs, err := GetSamplesAndProofs(blob)
 	require.NoError(t, err)
 
 	for i := range proofs[:] {
@@ -433,7 +433,7 @@ func Benchmark(b *testing.B) {
 		commitments[i] = Bytes48(commitment)
 		proofs[i] = Bytes48(proof)
 		fields[i] = getRandFieldElement(int64(i))
-		samples[i], sampleProofs[i], err = GetSamples(blobs[i])
+		samples[i], sampleProofs[i], err = GetSamplesAndProofs(blobs[i])
 		require.NoError(b, err)
 
 		partialSamples[i] = make([]Bytes32, FieldElementsPerBlob*2)
@@ -486,9 +486,9 @@ func Benchmark(b *testing.B) {
 		}
 	*/
 
-	b.Run("GetSamples", func(b *testing.B) {
+	b.Run("GetSamplesAndProofs", func(b *testing.B) {
 		for n := 0; n < b.N; n++ {
-			_, _, _ = GetSamples(blobs[0])
+			_, _, _ = GetSamplesAndProofs(blobs[0])
 		}
 	})
 
@@ -501,6 +501,14 @@ func Benchmark(b *testing.B) {
 	b.Run("SamplesToBlob", func(b *testing.B) {
 		for n := 0; n < b.N; n++ {
 			_, _ = SamplesToBlob(samples[0])
+		}
+	})
+
+	b.Run("VerifySamplesProof", func(b *testing.B) {
+		for n := 0; n < b.N; n++ {
+			ok, err := VerifySamplesProof(commitments[0], Bytes48(sampleProofs[0][0]), samples[0][0:16], 0)
+			require.Nil(b, err)
+			require.True(b, ok)
 		}
 	})
 }
