@@ -208,9 +208,6 @@ static C_KZG_RET c_kzg_calloc(void **out, size_t count, size_t size) {
 static C_KZG_RET new_g1_array(g1_t **x, size_t n) {
     return c_kzg_calloc((void **)x, n, sizeof(g1_t));
 }
-static C_KZG_RET new_g1_array_2(g1_t ***x, size_t n) {
-    return c_kzg_malloc((void **)x, n * sizeof **x);
-}
 
 /**
  * Allocate memory for an array of G2 group elements.
@@ -1806,10 +1803,9 @@ C_KZG_RET init_fk20_multi_settings(KZGSettings *s) {
     s->chunk_len = min(n, 16);
     k = n / s->chunk_len;
 
-    // `x_ext_fft_files` is two dimensional. Allocate space for pointers to the
-    // rows.
-    ret = new_g1_array_2(
-        &s->x_ext_fft_files, s->chunk_len * sizeof *s->x_ext_fft_files
+    /* Allocate space for array of pointers, this is a 2D array */
+    ret = c_kzg_calloc(
+        (void *)&s->x_ext_fft_files, s->chunk_len, sizeof(g1_t **)
     );
     if (ret != C_KZG_OK) goto out;
 
