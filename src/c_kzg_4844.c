@@ -3311,6 +3311,15 @@ out:
 }
 
 /**
+ * Given a chunk of samples, verify that the proof is valid.
+ *
+ * @param[out]  ok                  True if the proof are valid, otherwise false
+ * @param[in]   commitment_bytes    The commitment to the blob's samples
+ * @param[in]   proof_bytes         The proof for the samples
+ * @param[in]   samples             A chunk of samples
+ * @param[in]   n                   The number of samples provided
+ * @param[in]   index               The proof index
+ * @param[in]   s                   The trusted setup
  */
 C_KZG_RET verify_samples_proof(
     bool *ok,
