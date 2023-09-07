@@ -396,8 +396,10 @@ func TestSampleProof(t *testing.T) {
 	samples, proofs, err := GetSamplesAndProofs(blob)
 	require.NoError(t, err)
 
+	chunkLen := GetSampleChunkSize()
 	for i := range proofs[:] {
-		ok, err := VerifySamplesProof(Bytes48(commitment), Bytes48(proofs[i]), samples[i*16:(i+1)*16], i)
+		samplesChunk := samples[i*chunkLen : (i+1)*chunkLen]
+		ok, err := VerifySamplesProof(Bytes48(commitment), Bytes48(proofs[i]), samplesChunk, i)
 		require.NoError(t, err)
 		require.True(t, ok)
 	}
@@ -504,8 +506,10 @@ func Benchmark(b *testing.B) {
 	})
 
 	b.Run("VerifySamplesProof", func(b *testing.B) {
+		chunkLen := GetSampleChunkSize()
+		samplesChunk := samples[0][0:chunkLen]
 		for n := 0; n < b.N; n++ {
-			ok, err := VerifySamplesProof(commitments[0], Bytes48(sampleProofs[0][0]), samples[0][0:16], 0)
+			ok, err := VerifySamplesProof(commitments[0], Bytes48(sampleProofs[0][0]), samplesChunk, 0)
 			require.Nil(b, err)
 			require.True(b, ok)
 		}

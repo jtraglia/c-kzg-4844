@@ -120,6 +120,13 @@ func (b *Blob) UnmarshalText(input []byte) error {
 // Interface Functions
 ///////////////////////////////////////////////////////////////////////////////
 
+func GetSampleChunkSize() int {
+	if !loaded {
+		panic("trusted setup isn't loaded")
+	}
+	return int(settings.chunk_len)
+}
+
 /*
 LoadTrustedSetup is the binding for:
 
