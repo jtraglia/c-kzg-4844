@@ -492,15 +492,15 @@ func Benchmark(b *testing.B) {
 		}
 	})
 
-	b.Run("RecoverSamples", func(b *testing.B) {
-		for n := 0; n < b.N; n++ {
-			_, _ = RecoverSamples(partialSamples[0])
-		}
-	})
-
 	b.Run("SamplesToBlob", func(b *testing.B) {
 		for n := 0; n < b.N; n++ {
 			_, _ = SamplesToBlob(samples[0])
+		}
+	})
+
+	b.Run("RecoverSamples", func(b *testing.B) {
+		for n := 0; n < b.N; n++ {
+			_, _ = RecoverSamples(partialSamples[0])
 		}
 	})
 

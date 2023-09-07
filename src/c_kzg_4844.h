@@ -235,12 +235,12 @@ C_KZG_RET get_samples_and_proofs(
     Bytes32 *samples, KZGProof *proofs, const Blob *blob, const KZGSettings *s
 );
 
-C_KZG_RET recover_samples(
-    Bytes32 *recovered, const Bytes32 *samples, const KZGSettings *s
-);
-
 C_KZG_RET samples_to_blob(
     Blob *blob, const Bytes32 *samples, const KZGSettings *s
+);
+
+C_KZG_RET recover_samples(
+    Bytes32 *recovered, const Bytes32 *samples, const KZGSettings *s
 );
 
 C_KZG_RET verify_samples_proof(

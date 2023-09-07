@@ -3088,57 +3088,6 @@ out:
 ///////////////////////////////////////////////////////////////////////////////
 
 /**
- * Given at least n samples, recover the missing samples.
- *
- * @param[out]  recovered   A preallocated array for recovered samples
- * @param[in]   samples     The samples that you have
- * @param[in]   s           The trusted setup
- *
- * @remark Where n is the number of fields in the blob.
- * @remark The array of samples must be 2n length and in the correct order.
- * @remark Missing samples are marked as 0xffff...ffff (32 bytes).
- * @remark Recovery is faster if there are fewer missing samples.
- */
-C_KZG_RET recover_samples(
-    Bytes32 *recovered, const Bytes32 *samples, const KZGSettings *s
-) {
-    C_KZG_RET ret;
-    fr_t *recovered_fr = NULL;
-    fr_t *samples_fr = NULL;
-
-    /* Allocate space fr-form arrays */
-    ret = new_fr_array(&recovered_fr, s->max_width);
-    if (ret != C_KZG_OK) goto out;
-    ret = new_fr_array(&samples_fr, s->max_width);
-    if (ret != C_KZG_OK) goto out;
-
-    /* Convert samples to fr-form */
-    for (size_t i = 0; i < s->max_width; i++) {
-        /* Missing samples are marked as 0xffff...ffff */
-        if (!memcmp(&samples[i].bytes, &FR_NULL, sizeof(Bytes32))) {
-            samples_fr[i] = FR_NULL;
-        } else {
-            ret = bytes_to_bls_field(&samples_fr[i], &samples[i]);
-            if (ret != C_KZG_OK) goto out;
-        }
-    }
-
-    /* Call the implementation function to do the bulk of the work */
-    ret = recover_samples_impl(recovered_fr, samples_fr, s);
-    if (ret != C_KZG_OK) goto out;
-
-    /* Convert the recovered samples to byte-form */
-    for (size_t i = 0; i < s->max_width; i++) {
-        bytes_from_bls_field(&recovered[i], &recovered_fr[i]);
-    }
-
-out:
-    c_kzg_free(recovered_fr);
-    c_kzg_free(samples_fr);
-    return ret;
-}
-
-/**
  * Given a blob, get 2n samples and 2n/16 proofs.
  *
  * @param[out]  samples A preallocated array for samples
@@ -3253,6 +3202,57 @@ C_KZG_RET samples_to_blob(
 
 out:
     c_kzg_free(poly);
+    c_kzg_free(samples_fr);
+    return ret;
+}
+
+/**
+ * Given at least n samples, recover the missing samples.
+ *
+ * @param[out]  recovered   A preallocated array for recovered samples
+ * @param[in]   samples     The samples that you have
+ * @param[in]   s           The trusted setup
+ *
+ * @remark Where n is the number of fields in the blob.
+ * @remark The array of samples must be 2n length and in the correct order.
+ * @remark Missing samples are marked as 0xffff...ffff (32 bytes).
+ * @remark Recovery is faster if there are fewer missing samples.
+ */
+C_KZG_RET recover_samples(
+    Bytes32 *recovered, const Bytes32 *samples, const KZGSettings *s
+) {
+    C_KZG_RET ret;
+    fr_t *recovered_fr = NULL;
+    fr_t *samples_fr = NULL;
+
+    /* Allocate space fr-form arrays */
+    ret = new_fr_array(&recovered_fr, s->max_width);
+    if (ret != C_KZG_OK) goto out;
+    ret = new_fr_array(&samples_fr, s->max_width);
+    if (ret != C_KZG_OK) goto out;
+
+    /* Convert samples to fr-form */
+    for (size_t i = 0; i < s->max_width; i++) {
+        /* Missing samples are marked as 0xffff...ffff */
+        if (!memcmp(&samples[i].bytes, &FR_NULL, sizeof(Bytes32))) {
+            samples_fr[i] = FR_NULL;
+        } else {
+            ret = bytes_to_bls_field(&samples_fr[i], &samples[i]);
+            if (ret != C_KZG_OK) goto out;
+        }
+    }
+
+    /* Call the implementation function to do the bulk of the work */
+    ret = recover_samples_impl(recovered_fr, samples_fr, s);
+    if (ret != C_KZG_OK) goto out;
+
+    /* Convert the recovered samples to byte-form */
+    for (size_t i = 0; i < s->max_width; i++) {
+        bytes_from_bls_field(&recovered[i], &recovered_fr[i]);
+    }
+
+out:
+    c_kzg_free(recovered_fr);
     c_kzg_free(samples_fr);
     return ret;
 }
