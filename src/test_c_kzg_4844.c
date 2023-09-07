@@ -44,25 +44,6 @@ static void get_rand_bytes32(Bytes32 *out) {
     seed++;
 }
 
-#if 0
-static size_t get_rand_index(size_t max) {
-    Bytes32 data;
-    get_rand_bytes32(&data);
-    size_t value = *(size_t *)data.bytes;
-    return value % max;
-}
-
-static void shuffle_bytes32_array(Bytes32 *arr, size_t n) {
-    for (size_t i = n - 1; i > 0; i--) {
-        size_t j = get_rand_index(i + 1);
-        Bytes32 tmp;
-        memcpy(tmp.bytes, arr[i].bytes, 32);
-        memcpy(arr[i].bytes, arr[j].bytes, 32);
-        memcpy(arr[j].bytes, tmp.bytes, 32);
-    }
-}
-#endif
-
 static void get_rand_field_element(Bytes32 *out) {
     fr_t tmp_fr;
     Bytes32 tmp_bytes;
