@@ -159,19 +159,12 @@ typedef enum {
  * Stores the setup and parameters needed for computing KZG proofs.
  */
 typedef struct {
-    /** The length of `roots_of_unity`, a power of 2. */
     uint64_t max_width;
-    /** Powers of the primitive root of unity determined by
-     * `SCALE2_ROOT_OF_UNITY` in bit-reversal permutation order,
-     * length `max_width`. */
     fr_t *roots_of_unity;
     fr_t *expanded_roots_of_unity;
     fr_t *reverse_roots_of_unity;
-    /** G1 group elements from the trusted setup,
-     * in Lagrange form bit-reversal permutation. */
     g1_t *g1_values;
     g1_t *g1_values_lagrange;
-    /** G2 group elements from the trusted setup. */
     g2_t *g2_values;
 } KZGSettings;
 
