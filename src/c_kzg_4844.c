@@ -864,28 +864,6 @@ out:
     return ret;
 }
 
-#if 0
-/**
- * Evaluate a polynomial in coefficient form at a given point.
- *
- * @param[out] out The result of the evaluation
- * @param[in]  p   The polynomial in coefficient form
- * @param[in]  x   The point to evaluate the polynomial at
- * @param[in]  len The number of terms in the polynomial
- */
-static void evaluate_polynomial_in_coefficient_form(
-    fr_t *out, const fr_t *p, const fr_t *x, size_t len
-) {
-    fr_t tmp;
-    *out = p[0];
-    for (size_t i = 1; i < len; i++) {
-        fr_pow(&tmp, x, i);
-        blst_fr_mul(&tmp, &tmp, &p[i]);
-        blst_fr_add(out, out, &tmp);
-    }
-}
-#endif
-
 ///////////////////////////////////////////////////////////////////////////////
 // KZG Functions
 ///////////////////////////////////////////////////////////////////////////////
@@ -1141,7 +1119,10 @@ static C_KZG_RET compute_kzg_proof_impl(
 
     g1_t out_g1;
     ret = g1_lincomb_fast(
-        &out_g1, s->g1_values_lagrange, (const fr_t *)(&q.evals), FIELD_ELEMENTS_PER_BLOB
+        &out_g1,
+        s->g1_values_lagrange,
+        (const fr_t *)(&q.evals),
+        FIELD_ELEMENTS_PER_BLOB
     );
     if (ret != C_KZG_OK) goto out;
 
@@ -1792,35 +1773,6 @@ void FREE_TRUSTED_SETUP(KZGSettings *s) {
     c_kzg_free(s->x_ext_fft_files);
 }
 
-#if 0
-/**
- * Basic sanity check that the trusted setup was loaded in Lagrange form.
- *
- * @param[in] s  Pointer to the stored trusted setup data
- * @param[in] n1 Number of `g1` points in trusted_setup
- * @param[in] n2 Number of `g2` points in trusted_setup
- */
-static C_KZG_RET is_trusted_setup_in_lagrange_form(
-    const KZGSettings *s, size_t n1, size_t n2
-) {
-    /* Trusted setup is too small; we can't work with this */
-    if (n1 < 2 || n2 < 2) {
-        return C_KZG_BADARGS;
-    }
-
-    /*
-     * If the following pairing equation checks out:
-     *     e(G1_SETUP[1], G2_SETUP[0]) ?= e(G1_SETUP[0], G2_SETUP[1])
-     * then the trusted setup was loaded in monomial form.
-     * If so, error out since we want the trusted setup in Lagrange form.
-     */
-    bool is_monomial_form = pairings_verify(
-        &s->g1_values[1], &s->g2_values[0], &s->g1_values[0], &s->g2_values[1]
-    );
-    return is_monomial_form ? C_KZG_BADARGS : C_KZG_OK;
-}
-#endif
-
 /* Forward function declaration */
 static C_KZG_RET toeplitz_part_1(
     g1_t *out, const g1_t *x, uint64_t n, const KZGSettings *s
@@ -1963,12 +1915,6 @@ C_KZG_RET LOAD_TRUSTED_SETUP(
         }
         blst_p2_from_affine(&out->g2_values[i], &g2_affine);
     }
-
-    /* Make sure the trusted setup was loaded in Lagrange form */
-    #if 0
-    ret = is_trusted_setup_in_lagrange_form(out, n1, n2);
-    if (ret != C_KZG_OK) goto out_error;
-    #endif
 
     /* Compute roots of unity and permute the G1 trusted setup */
     ret = compute_roots_of_unity(out);
@@ -3043,9 +2989,7 @@ out:
  * reverse bit order.
  *
  */
-C_KZG_RET da_using_fk20_multi(
-    g1_t *out, const poly *p, const KZGSettings *s
-) {
+C_KZG_RET da_using_fk20_multi(g1_t *out, const poly *p, const KZGSettings *s) {
     C_KZG_RET ret;
     uint64_t n = p->length, n2 = n * 2;
 
