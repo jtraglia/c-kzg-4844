@@ -1763,13 +1763,16 @@ out:
 void FREE_TRUSTED_SETUP(KZGSettings *s) {
     if (s == NULL) return;
     s->max_width = 0;
-    s->chunk_len = 0;
     c_kzg_free(s->roots_of_unity);
     c_kzg_free(s->expanded_roots_of_unity);
     c_kzg_free(s->reverse_roots_of_unity);
     c_kzg_free(s->g1_values);
     c_kzg_free(s->g1_values_lagrange);
     c_kzg_free(s->g2_values);
+    for (size_t i = 0; i < s->chunk_len; i++) {
+        c_kzg_free(s->x_ext_fft_files[i]);
+    }
+    s->chunk_len = 0;
     c_kzg_free(s->x_ext_fft_files);
 }
 
@@ -1852,13 +1855,13 @@ C_KZG_RET LOAD_TRUSTED_SETUP(
     C_KZG_RET ret;
 
     out->max_width = 0;
-    out->chunk_len = 0;
     out->roots_of_unity = NULL;
     out->expanded_roots_of_unity = NULL;
     out->reverse_roots_of_unity = NULL;
     out->g1_values = NULL;
     out->g1_values_lagrange = NULL;
     out->g2_values = NULL;
+    out->chunk_len = 0;
     out->x_ext_fft_files = NULL;
 
     /* Sanity check in case this is called directly */
