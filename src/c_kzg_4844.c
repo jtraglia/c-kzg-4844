@@ -1586,7 +1586,7 @@ C_KZG_RET ifft_g1(g1_t *out, const g1_t *in, size_t n, const KZGSettings *s) {
 ///////////////////////////////////////////////////////////////////////////////
 
 /**
- * Reverse the bit order in a 32 bit integer.
+ * Reverse the bit order in a 32-bit integer.
  *
  * @param[in] a The integer to be reversed
  * @return An integer with the bits of @p a reversed
@@ -2094,14 +2094,14 @@ static C_KZG_RET ifft_fr(
 typedef struct {
     fr_t *coeffs;
     size_t length;
-} poly;
+} poly_t;
 
-static C_KZG_RET new_poly(poly *out, uint64_t length) {
+static C_KZG_RET new_poly(poly_t *out, uint64_t length) {
     out->length = length;
     return new_fr_array(&out->coeffs, length);
 }
 
-static void free_poly(poly *p) {
+static void free_poly(poly_t *p) {
     if (p->coeffs != NULL) {
         c_kzg_free(p->coeffs);
     }
@@ -2228,11 +2228,11 @@ static C_KZG_RET pad_p(
  * @param[in]   s           The trusted setup
  */
 static C_KZG_RET reduce_partials(
-    poly *out,
+    poly_t *out,
     uint64_t len_out,
     fr_t *scratch,
     uint64_t len_scratch,
-    const poly *partials,
+    const poly_t *partials,
     uint64_t partial_count,
     const KZGSettings *s
 ) {
@@ -2321,7 +2321,7 @@ out:
  */
 static C_KZG_RET zero_polynomial_via_multiplication(
     fr_t *zero_eval,
-    poly *zero_poly,
+    poly_t *zero_poly,
     uint64_t length,
     const uint64_t *missing_indices,
     uint64_t len_missing,
@@ -2376,8 +2376,8 @@ static C_KZG_RET zero_polynomial_via_multiplication(
         // Just allocate pointers here since we're re-using `work` for the
         // partial processing Combining partials can be done mostly in-place,
         // using a scratchpad.
-        poly *partials;
-        ret = c_kzg_calloc((void **)&partials, partial_count, sizeof(poly));
+        poly_t *partials;
+        ret = c_kzg_calloc((void **)&partials, partial_count, sizeof(poly_t));
         if (ret != C_KZG_OK) goto out;
 
         uint64_t offset = 0, out_offset = 0, max = len_missing;
@@ -2539,7 +2539,7 @@ static C_KZG_RET recover_samples_impl(
     fr_t *eval_scaled_zero_poly = NULL;
     fr_t *scaled_reconstructed_poly = NULL;
 
-    poly zero_poly;
+    poly_t zero_poly;
     zero_poly.coeffs = NULL;
 
     /* Allocate space for arrays */
@@ -2716,7 +2716,7 @@ out:
  */
 static C_KZG_RET toeplitz_part_2(
     g1_t *out,
-    const poly *toeplitz_coeffs,
+    const poly_t *toeplitz_coeffs,
     const g1_t *x_ext_fft,
     const KZGSettings *fs
 ) {
@@ -2793,7 +2793,7 @@ out:
  * @retval C_CZK_MALLOC  Memory allocation failed
  */
 static C_KZG_RET toeplitz_coeffs_stride(
-    poly *out, const poly *in, uint64_t offset, uint64_t stride
+    poly_t *out, const poly_t *in, uint64_t offset, uint64_t stride
 ) {
     uint64_t n = in->length, k, k2;
 
@@ -2829,12 +2829,12 @@ static C_KZG_RET toeplitz_coeffs_stride(
  * #new_fk20_multi_settings
  */
 static C_KZG_RET fk20_multi_da_opt(
-    g1_t *out, const poly *p, const KZGSettings *s
+    g1_t *out, const poly_t *p, const KZGSettings *s
 ) {
     C_KZG_RET ret;
     uint64_t n = p->length, n2 = n * 2, k, k2;
     g1_t *h_ext_fft = NULL, *h_ext_fft_file = NULL, *h = NULL;
-    poly toeplitz_coeffs;
+    poly_t toeplitz_coeffs;
 
     CHECK(n2 <= s->max_width);
     CHECK(is_power_of_two(n));
@@ -2894,7 +2894,7 @@ out:
  * Computes all the KZG proofs for data availability checks. This involves
  * sampling on the double domain and reordering according to reverse bit order.
  */
-static C_KZG_RET da_using_fk20_multi(g1_t *out, const poly *p, const KZGSettings *s) {
+static C_KZG_RET da_using_fk20_multi(g1_t *out, const poly_t *p, const KZGSettings *s) {
     C_KZG_RET ret;
     uint64_t n = p->length, n2 = n * 2;
 
@@ -2939,7 +2939,7 @@ static C_KZG_RET verify_kzg_proof_multi_impl(
     const KZGSettings *s
 ) {
     C_KZG_RET ret;
-    poly interp;
+    poly_t interp;
     fr_t inv_x, inv_x_pow, x_pow;
     g2_t xn2, xn_minus_yn;
     g1_t is1, commit_minus_interp;
@@ -3008,12 +3008,12 @@ C_KZG_RET get_samples_and_proofs(
     Bytes32 *samples, KZGProof *proofs, const Blob *blob, const KZGSettings *s
 ) {
     C_KZG_RET ret;
-    fr_t *poly_2 = NULL;
+    fr_t *poly = NULL;
     fr_t *samples_fr = NULL;
     g1_t *proofs_g1 = NULL;
 
     /* Allocate space fr-form arrays */
-    ret = new_fr_array(&poly_2, s->max_width);
+    ret = new_fr_array(&poly, s->max_width);
     if (ret != C_KZG_OK) goto out;
     ret = new_fr_array(&samples_fr, s->max_width);
     if (ret != C_KZG_OK) goto out;
@@ -3021,7 +3021,7 @@ C_KZG_RET get_samples_and_proofs(
     if (ret != C_KZG_OK) goto out;
 
     /* Initialize all of the polynomial fields to zero */
-    memset(poly_2, 0, sizeof(fr_t) * s->max_width);
+    memset(poly, 0, sizeof(fr_t) * s->max_width);
 
     /*
      * Convert the blob to a polynomial. Note that only the first 4096 fields
@@ -3029,17 +3029,17 @@ C_KZG_RET get_samples_and_proofs(
      * This is required because the polynomial will be evaluated with 8192
      * roots of unity.
      */
-    ret = blob_to_polynomial((Polynomial *)poly_2, blob);
+    ret = blob_to_polynomial((Polynomial *)poly, blob);
     if (ret != C_KZG_OK) goto out;
 
-    poly p;
+    poly_t p;
     p.length = s->max_width / 2;
-    p.coeffs = poly_2;
+    p.coeffs = poly;
     ret = da_using_fk20_multi(proofs_g1, &p, s);
     if (ret != C_KZG_OK) goto out;
 
     /* Get the samples via forward transformation */
-    ret = fft_fr(samples_fr, poly_2, s->max_width, s);
+    ret = fft_fr(samples_fr, poly, s->max_width, s);
     if (ret != C_KZG_OK) goto out;
 
     /* Convert all of the samples to byte-form */
@@ -3056,7 +3056,7 @@ C_KZG_RET get_samples_and_proofs(
     }
 
 out:
-    c_kzg_free(poly_2);
+    c_kzg_free(poly);
     c_kzg_free(samples_fr);
     c_kzg_free(proofs_g1);
     return ret;

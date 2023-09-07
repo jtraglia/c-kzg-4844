@@ -1730,7 +1730,7 @@ static void test_expand_root_of_unity__fails_wrong_root_of_unity(void) {
 // Tests for reconstruction
 ///////////////////////////////////////////////////////////////////////////////
 
-static void test_reconstruct__random_blob(void) {
+static void test_reconstruct__succeeds_random_blob(void) {
     C_KZG_RET ret;
     Blob blob;
     size_t n = s.max_width;
@@ -1997,7 +1997,7 @@ int main(void) {
     RUN(test_expand_root_of_unity__succeeds_with_root);
     RUN(test_expand_root_of_unity__fails_not_root_of_unity);
     RUN(test_expand_root_of_unity__fails_wrong_root_of_unity);
-    RUN(test_reconstruct__random_blob);
+    RUN(test_reconstruct__succeeds_random_blob);
 
     /*
      * These functions are only executed if we're profiling. To me, it makes
