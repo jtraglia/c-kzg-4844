@@ -1811,6 +1811,11 @@ static C_KZG_RET init_fk20_multi_settings(KZGSettings *s) {
     s->sample_count = s->max_width / s->sample_size;
     k = n / s->sample_size;
 
+    if (s->sample_size >= TRUSTED_SETUP_NUM_G2_POINTS) {
+        ret = C_KZG_BADARGS;
+        goto out;
+    }
+
     /* Allocate space for array of pointers, this is a 2D array */
     void **tmp = (void **)&s->x_ext_fft_files;
     ret = c_kzg_calloc(tmp, s->sample_size, __SIZEOF_POINTER__);
@@ -2949,11 +2954,6 @@ static C_KZG_RET verify_kzg_proof_multi_impl(
     fr_t inv_x, inv_x_pow, x_pow;
     g2_t xn2, xn_minus_yn;
     g1_t is1, commit_minus_interp;
-
-    if (n >= TRUSTED_SETUP_NUM_G2_POINTS) {
-        printf("NEEDS MORE G2 POINTS\n");
-        return C_KZG_BADARGS;
-    }
 
     CHECK(is_power_of_two(n));
 

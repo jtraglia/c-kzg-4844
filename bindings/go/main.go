@@ -48,6 +48,9 @@ var (
 		C.C_KZG_ERROR:   ErrError,
 		C.C_KZG_MALLOC:  ErrMalloc,
 	}
+	ErrInvalidDataLength  = errors.New("invalid data length")
+	ErrInvalidSampleCount = errors.New("invalid sample count")
+	ErrInvalidSampleSize  = errors.New("invalid sample size")
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -121,9 +124,9 @@ func (b *Blob) UnmarshalText(input []byte) error {
 // Internal Helper Functions
 ///////////////////////////////////////////////////////////////////////////////
 
-func chunk(data []Bytes32) []Sample {
+func chunk(data []Bytes32) ([]Sample, error) {
 	if len(data) != GetDataCount() {
-		panic("invalid data")
+		return []Sample{}, ErrInvalidDataLength
 	}
 	sampleSize := GetSampleSize()
 	sampleCount := GetSampleCount()
@@ -131,17 +134,17 @@ func chunk(data []Bytes32) []Sample {
 	for i := 0; i < sampleCount; i++ {
 		samples[i] = data[i*sampleSize : (i+1)*sampleSize]
 	}
-	return samples
+	return samples, nil
 }
 
-func flatten(samples []Sample) []Bytes32 {
+func flatten(samples []Sample) ([]Bytes32, error) {
 	if len(samples) != GetSampleCount() {
-		panic("invalid sample count")
+		return []Bytes32{}, ErrInvalidSampleCount
 	}
 	sampleSize := GetSampleSize()
 	for _, sample := range samples {
 		if len(sample) != sampleSize {
-			panic(fmt.Sprintf("invalid sample size: %d", len(sample)))
+			return []Bytes32{}, ErrInvalidSampleSize
 		}
 	}
 	dataCount := GetDataCount()
@@ -149,7 +152,7 @@ func flatten(samples []Sample) []Bytes32 {
 	for i := 0; i < dataCount; i++ {
 		data[i] = samples[i/sampleSize][i%sampleSize]
 	}
-	return data
+	return data, nil
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -431,12 +434,19 @@ func GetSamplesAndProofs(blob Blob) ([]Sample, []KZGProof, error) {
 	}
 	flattenedSamples := make([]Bytes32, GetDataCount())
 	proofs := make([]KZGProof, GetSampleCount())
-	ret := C.get_samples_and_proofs(
+	err := makeErrorFromRet(C.get_samples_and_proofs(
 		*(**C.Bytes32)(unsafe.Pointer(&flattenedSamples)),
 		*(**C.KZGProof)(unsafe.Pointer(&proofs)),
 		(*C.Blob)(unsafe.Pointer(&blob)),
-		&settings)
-	return chunk(flattenedSamples), proofs, makeErrorFromRet(ret)
+		&settings))
+	if err != nil {
+		return []Sample{}, []KZGProof{}, err
+	}
+	samples, err := chunk(flattenedSamples)
+	if err != nil {
+		return []Sample{}, []KZGProof{}, err
+	}
+	return samples, proofs, nil
 }
 
 /*
@@ -452,7 +462,10 @@ func SamplesToBlob(samples []Sample) (Blob, error) {
 		panic("trusted setup isn't loaded")
 	}
 	blob := Blob{}
-	flattenedSamples := flatten(samples)
+	flattenedSamples, err := flatten(samples)
+	if err != nil {
+		return blob, err
+	}
 	ret := C.samples_to_blob(
 		(*C.Blob)(unsafe.Pointer(&blob)),
 		*(**C.Bytes32)(unsafe.Pointer(&flattenedSamples)),
@@ -473,12 +486,22 @@ func RecoverSamples(samples []Sample) ([]Sample, error) {
 		panic("trusted setup isn't loaded")
 	}
 	flattenedRecovered := make([]Bytes32, GetDataCount())
-	flattenedSamples := flatten(samples)
-	ret := C.recover_samples(
+	flattenedSamples, err := flatten(samples)
+	if err != nil {
+		return []Sample{}, err
+	}
+	err = makeErrorFromRet(C.recover_samples(
 		*(**C.Bytes32)(unsafe.Pointer(&flattenedRecovered)),
 		*(**C.Bytes32)(unsafe.Pointer(&flattenedSamples)),
-		&settings)
-	return chunk(flattenedSamples), makeErrorFromRet(ret)
+		&settings))
+	if err != nil {
+		return []Sample{}, err
+	}
+	recovered, err := chunk(flattenedSamples)
+	if err != nil {
+		return []Sample{}, err
+	}
+	return recovered, nil
 }
 
 /*
