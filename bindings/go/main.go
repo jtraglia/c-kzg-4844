@@ -160,14 +160,14 @@ func GetDataCount() int {
 	if !loaded {
 		panic("trusted setup isn't loaded")
 	}
-	return FieldElementsPerBlob * 2
+	return int(settings.max_width)
 }
 
 func GetSampleSize() int {
 	if !loaded {
 		panic("trusted setup isn't loaded")
 	}
-	return int(settings.chunk_len)
+	return int(settings.sample_size)
 }
 
 func GetSampleCount() int {

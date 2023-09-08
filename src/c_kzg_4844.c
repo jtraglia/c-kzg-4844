@@ -1783,10 +1783,10 @@ void FREE_TRUSTED_SETUP(KZGSettings *s) {
     c_kzg_free(s->g1_values);
     c_kzg_free(s->g1_values_lagrange);
     c_kzg_free(s->g2_values);
-    for (size_t i = 0; i < s->chunk_len; i++) {
+    for (size_t i = 0; i < s->sample_size; i++) {
         c_kzg_free(s->x_ext_fft_files[i]);
     }
-    s->chunk_len = 0;
+    s->sample_size = 0;
     c_kzg_free(s->x_ext_fft_files);
 }
 
@@ -1806,21 +1806,21 @@ static C_KZG_RET init_fk20_multi_settings(KZGSettings *s) {
     g1_t *x = NULL;
 
     n = s->max_width / 2;
-    s->chunk_len = min(n, 16);
-    k = n / s->chunk_len;
+    s->sample_size = min(n, 16);
+    k = n / s->sample_size;
 
     /* Allocate space for array of pointers, this is a 2D array */
     ret = c_kzg_calloc(
-        (void *)&s->x_ext_fft_files, s->chunk_len, sizeof(g1_t **)
+        (void *)&s->x_ext_fft_files, s->sample_size, sizeof(g1_t **)
     );
     if (ret != C_KZG_OK) goto out;
 
     ret = new_g1_array(&x, k);
     if (ret != C_KZG_OK) goto out;
 
-    for (uint64_t offset = 0; offset < s->chunk_len; offset++) {
-        uint64_t start = n - s->chunk_len - 1 - offset;
-        for (uint64_t i = 0, j = start; i + 1 < k; i++, j -= s->chunk_len) {
+    for (uint64_t offset = 0; offset < s->sample_size; offset++) {
+        uint64_t start = n - s->sample_size - 1 - offset;
+        for (uint64_t i = 0, j = start; i + 1 < k; i++, j -= s->sample_size) {
             x[i] = s->g1_values[j];
         }
         x[k - 1] = G1_IDENTITY;
@@ -1863,7 +1863,7 @@ C_KZG_RET LOAD_TRUSTED_SETUP(
     out->g1_values = NULL;
     out->g1_values_lagrange = NULL;
     out->g2_values = NULL;
-    out->chunk_len = 0;
+    out->sample_size = 0;
     out->x_ext_fft_files = NULL;
 
     /* Sanity check in case this is called directly */
@@ -2846,7 +2846,7 @@ static C_KZG_RET fk20_multi_da_opt(
     CHECK(is_power_of_two(n));
 
     n = n2 / 2;
-    k = n / s->chunk_len;
+    k = n / s->sample_size;
     k2 = k * 2;
 
     ret = new_g1_array(&h_ext_fft, k2);
@@ -2855,12 +2855,12 @@ static C_KZG_RET fk20_multi_da_opt(
         h_ext_fft[i] = G1_IDENTITY;
     }
 
-    ret = new_poly(&toeplitz_coeffs, n2 / s->chunk_len);
+    ret = new_poly(&toeplitz_coeffs, n2 / s->sample_size);
     if (ret != C_KZG_OK) goto out;
     ret = new_g1_array(&h_ext_fft_file, toeplitz_coeffs.length);
     if (ret != C_KZG_OK) goto out;
-    for (uint64_t i = 0; i < s->chunk_len; i++) {
-        ret = toeplitz_coeffs_stride(&toeplitz_coeffs, p, i, s->chunk_len);
+    for (uint64_t i = 0; i < s->sample_size; i++) {
+        ret = toeplitz_coeffs_stride(&toeplitz_coeffs, p, i, s->sample_size);
         if (ret != C_KZG_OK) goto out;
         ret = toeplitz_part_2(
             h_ext_fft_file, &toeplitz_coeffs, s->x_ext_fft_files[i], s
@@ -2909,7 +2909,7 @@ static C_KZG_RET da_using_fk20_multi(g1_t *out, const poly_t *p, const KZGSettin
 
     ret = fk20_multi_da_opt(out, p, s);
     if (ret != C_KZG_OK) goto out;
-    ret = bit_reversal_permutation(out, sizeof out[0], n2 / s->chunk_len);
+    ret = bit_reversal_permutation(out, sizeof out[0], n2 / s->sample_size);
     if (ret != C_KZG_OK) goto out;
 
 out:
@@ -3023,7 +3023,7 @@ C_KZG_RET get_samples_and_proofs(
     if (ret != C_KZG_OK) goto out;
     ret = new_fr_array(&samples_fr, s->max_width);
     if (ret != C_KZG_OK) goto out;
-    ret = new_g1_array(&proofs_g1, s->max_width / s->chunk_len);
+    ret = new_g1_array(&proofs_g1, s->max_width / s->sample_size);
     if (ret != C_KZG_OK) goto out;
 
     /* Initialize all of the polynomial fields to zero */
@@ -3058,7 +3058,7 @@ C_KZG_RET get_samples_and_proofs(
     if (ret != C_KZG_OK) goto out;
 
     /* Convert all of the proofs to byte-form */
-    for (size_t i = 0; i < s->max_width / s->chunk_len; i++) {
+    for (size_t i = 0; i < s->max_width / s->sample_size; i++) {
         bytes_from_g1(&proofs[i], &proofs_g1[i]);
     }
 
@@ -3199,16 +3199,16 @@ C_KZG_RET verify_sample_proof(
     C_KZG_RET ret;
     g1_t commitment, proof;
     fr_t x, *ys = NULL;
-    uint64_t n = s->chunk_len;
+    uint64_t n = s->sample_size;
 
     *ok = false;
 
     /* Do some sanity checks */
-    if (n != s->chunk_len) {
+    if (n != s->sample_size) {
         ret = C_KZG_BADARGS;
         goto out;
     }
-    if (index >= s->max_width / s->chunk_len) {
+    if (index >= s->max_width / s->sample_size) {
         ret = C_KZG_BADARGS;
         goto out;
     }
@@ -3228,7 +3228,7 @@ C_KZG_RET verify_sample_proof(
     }
 
     /* Calculate the input value */
-    size_t num_chunks = s->max_width / s->chunk_len;
+    size_t num_chunks = s->max_width / s->sample_size;
     size_t pos = reverse_bits_limited(num_chunks, index);
     x = s->expanded_roots_of_unity[pos];
 
