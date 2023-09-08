@@ -3047,6 +3047,7 @@ C_KZG_RET get_samples_and_proofs(
         bytes_from_bls_field(&samples[i], &samples_fr[i]);
     }
 
+    /* Bit-reverse the samples */
     ret = bit_reversal_permutation(samples, sizeof(samples[0]), s->max_width);
     if (ret != C_KZG_OK) goto out;
 
@@ -3090,6 +3091,10 @@ C_KZG_RET samples_to_blob(
         ret = bytes_to_bls_field(&samples_fr[i], &samples[i]);
         if (ret != C_KZG_OK) goto out;
     }
+
+    /* Bit-reverse the samples */
+    ret = bit_reversal_permutation(samples_fr, sizeof(samples_fr[0]), s->max_width);
+    if (ret != C_KZG_OK) goto out;
 
     /* Get the polynomial via inverse transformation */
     ret = ifft_fr(poly, samples_fr, s->max_width, s);
@@ -3144,6 +3149,10 @@ C_KZG_RET recover_samples(
         }
     }
 
+    /* Bit-reverse the samples */
+    ret = bit_reversal_permutation(samples_fr, sizeof(samples_fr[0]), s->max_width);
+    if (ret != C_KZG_OK) goto out;
+
     /* Call the implementation function to do the bulk of the work */
     ret = recover_samples_impl(recovered_fr, samples_fr, s);
     if (ret != C_KZG_OK) goto out;
@@ -3152,6 +3161,10 @@ C_KZG_RET recover_samples(
     for (size_t i = 0; i < s->max_width; i++) {
         bytes_from_bls_field(&recovered[i], &recovered_fr[i]);
     }
+
+    /* Bit-reverse the recovered samples */
+    ret = bit_reversal_permutation(recovered, sizeof(recovered[0]), s->max_width);
+    if (ret != C_KZG_OK) goto out;
 
 out:
     c_kzg_free(recovered_fr);
