@@ -2950,6 +2950,11 @@ static C_KZG_RET verify_kzg_proof_multi_impl(
     g2_t xn2, xn_minus_yn;
     g1_t is1, commit_minus_interp;
 
+    if (n >= TRUSTED_SETUP_NUM_G2_POINTS) {
+        printf("NEEDS MORE G2 POINTS\n");
+        return C_KZG_BADARGS;
+    }
+
     CHECK(is_power_of_two(n));
 
     // Interpolate at a coset.
