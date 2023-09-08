@@ -1818,10 +1818,9 @@ static void test_verify_sample_proof__succeeds_random_blob(void) {
     ASSERT_EQUALS(ret, C_KZG_OK);
 
     /* Verify all of the sample proofs */
-    size_t sample_size = s.chunk_len;
-    size_t num_proofs = n / s.chunk_len;
+    size_t num_proofs = n / s.sample_size;
     for (uint64_t i = 0; i < num_proofs; i++) {
-        Bytes32 *sample = samples + (i * sample_size);
+        Bytes32 *sample = samples + (i * s.sample_size);
         verify_sample_proof(&ok, &commitment, &proofs[i], sample, i, &s);
         ASSERT_EQUALS(ok, true);
     }
