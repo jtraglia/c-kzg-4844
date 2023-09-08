@@ -1788,6 +1788,46 @@ static void test_reconstruct__succeeds_random_blob(void) {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// Tests for sample proofs
+///////////////////////////////////////////////////////////////////////////////
+
+static void test_verify_sample_proof__succeeds_random_blob(void) {
+    C_KZG_RET ret;
+    Blob blob;
+    size_t n = s.max_width;
+    Bytes32 *samples = NULL;
+    KZGProof *proofs = NULL;
+    KZGCommitment commitment;
+    bool ok;
+
+    /* Allocate arrays */
+    ret = c_kzg_calloc((void **)&samples, n, sizeof(Bytes32));
+    ASSERT_EQUALS(ret, C_KZG_OK);
+    ret = c_kzg_calloc((void **)&proofs, n, sizeof(KZGProof));
+    ASSERT_EQUALS(ret, C_KZG_OK);
+
+    /* Get a random blob */
+    get_rand_blob(&blob);
+
+    /* Get a commitment to the blob */
+    ret = blob_to_kzg_commitment(&commitment, &blob, &s);
+    ASSERT_EQUALS(ret, C_KZG_OK);
+
+    /* Get the samples and proofs */
+    ret = get_samples_and_proofs(samples, proofs, &blob, &s);
+    ASSERT_EQUALS(ret, C_KZG_OK);
+
+    /* Verify all of the sample proofs */
+    size_t sample_size = s.chunk_len;
+    size_t num_proofs = n / s.chunk_len;
+    for (uint64_t i = 0; i < num_proofs; i++) {
+        Bytes32 *sample = samples + (i * sample_size);
+        verify_sample_proof(&ok, &commitment, &proofs[i], sample, i, &s);
+        ASSERT_EQUALS(ok, true);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // Profiling Functions
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -1998,6 +2038,7 @@ int main(void) {
     RUN(test_expand_root_of_unity__fails_not_root_of_unity);
     RUN(test_expand_root_of_unity__fails_wrong_root_of_unity);
     RUN(test_reconstruct__succeeds_random_blob);
+    RUN(test_verify_sample_proof__succeeds_random_blob);
 
     /*
      * These functions are only executed if we're profiling. To me, it makes

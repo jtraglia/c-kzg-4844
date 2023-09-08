@@ -874,10 +874,15 @@ out:
  * @param[in]  n   The polynomial length
  * @param[in]  s   The trusted setup
  */
-static C_KZG_RET poly_to_kzg_commitment(
+C_KZG_RET poly_to_kzg_commitment_monomial(
     g1_t *out, const fr_t *p, size_t n, const KZGSettings *s
 ) {
     return g1_lincomb_fast(out, s->g1_values, p, n);
+}
+C_KZG_RET poly_to_kzg_commitment_lagrange(
+    g1_t *out, const fr_t *p, size_t n, const KZGSettings *s
+) {
+    return g1_lincomb_fast(out, s->g1_values_lagrange, p, n);
 }
 
 /**
@@ -896,7 +901,8 @@ C_KZG_RET BLOB_TO_KZG_COMMITMENT(
 
     ret = blob_to_polynomial(&p, blob);
     if (ret != C_KZG_OK) return ret;
-    ret = poly_to_kzg_commitment(
+    /* XXX: change to monomial for sample proofs to work */
+    ret = poly_to_kzg_commitment_lagrange(
         &commitment, p.evals, FIELD_ELEMENTS_PER_BLOB, s
     );
     if (ret != C_KZG_OK) return ret;
@@ -2969,7 +2975,7 @@ static C_KZG_RET verify_kzg_proof_multi_impl(
     g2_sub(&xn_minus_yn, &s->g2_values[n], &xn2);
 
     // [interpolation_polynomial(s)]_1
-    ret = poly_to_kzg_commitment(&is1, interp.coeffs, n, s);
+    ret = poly_to_kzg_commitment_monomial(&is1, interp.coeffs, n, s);
     if (ret != C_KZG_OK) return ret;
 
     // [commitment - interpolation_polynomial(s)]_1 = [commit]_1 -
