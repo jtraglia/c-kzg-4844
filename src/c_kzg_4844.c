@@ -3160,28 +3160,27 @@ out:
 }
 
 /**
- * Given a chunk of samples, verify that the proof is valid.
+ * Given a sample, verify that the proof is valid.
  *
  * @param[out]  ok                  True if the proof are valid, otherwise false
  * @param[in]   commitment_bytes    The commitment to the blob's samples
- * @param[in]   proof_bytes         The proof for the samples
- * @param[in]   samples             A chunk of samples
- * @param[in]   n                   The number of samples provided
- * @param[in]   index               The proof index
+ * @param[in]   proof_bytes         The proof for the sample
+ * @param[in]   sample              The sample to check
+ * @param[in]   index               The sample/proof index
  * @param[in]   s                   The trusted setup
  */
-C_KZG_RET verify_samples_proof(
+C_KZG_RET verify_sample_proof(
     bool *ok,
     const Bytes48 *commitment_bytes,
     const Bytes48 *proof_bytes,
-    const Bytes32 *samples,
-    size_t n,
+    const Bytes32 *sample,
     size_t index,
     const KZGSettings *s
 ) {
     C_KZG_RET ret;
     g1_t commitment, proof;
     fr_t x, *ys = NULL;
+    uint64_t n = s->chunk_len;
 
     *ok = false;
 
@@ -3205,7 +3204,7 @@ C_KZG_RET verify_samples_proof(
     ret = bytes_to_kzg_proof(&proof, proof_bytes);
     if (ret != C_KZG_OK) goto out;
     for (size_t i = 0; i < n; i++) {
-        ret = bytes_to_bls_field(&ys[i], &samples[i]);
+        ret = bytes_to_bls_field(&ys[i], &sample[i]);
         if (ret != C_KZG_OK) goto out;
     }
 

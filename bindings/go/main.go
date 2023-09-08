@@ -33,6 +33,7 @@ type (
 	KZGCommitment Bytes48
 	KZGProof      Bytes48
 	Blob          [BytesPerBlob]byte
+	Sample        []Bytes32
 )
 
 var (
@@ -117,15 +118,68 @@ func (b *Blob) UnmarshalText(input []byte) error {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Interface Functions
+// Internal Helper Functions
 ///////////////////////////////////////////////////////////////////////////////
 
-func GetSampleChunkSize() int {
+func chunk(data []Bytes32) []Sample {
+	if len(data) != GetDataCount() {
+		panic("invalid data")
+	}
+	sampleSize := GetSampleSize()
+	sampleCount := GetSampleCount()
+	samples := make([]Sample, sampleCount)
+	for i := 0; i < sampleCount; i++ {
+		samples[i] = data[i*sampleSize : (i+1)*sampleSize]
+	}
+	return samples
+}
+
+func flatten(samples []Sample) []Bytes32 {
+	if len(samples) != GetSampleCount() {
+		panic("invalid sample count")
+	}
+	sampleSize := GetSampleSize()
+	for _, sample := range samples {
+		if len(sample) != sampleSize {
+			panic(fmt.Sprintf("invalid sample size: %d", len(sample)))
+		}
+	}
+	dataCount := GetDataCount()
+	data := make([]Bytes32, dataCount)
+	for i := 0; i < dataCount; i++ {
+		data[i] = samples[i/sampleSize][i%sampleSize]
+	}
+	return data
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Configuration Functions
+///////////////////////////////////////////////////////////////////////////////
+
+func GetDataCount() int {
+	if !loaded {
+		panic("trusted setup isn't loaded")
+	}
+	return FieldElementsPerBlob * 2
+}
+
+func GetSampleSize() int {
 	if !loaded {
 		panic("trusted setup isn't loaded")
 	}
 	return int(settings.chunk_len)
 }
+
+func GetSampleCount() int {
+	if !loaded {
+		panic("trusted setup isn't loaded")
+	}
+	return GetDataCount() / GetSampleSize()
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Interface Functions
+///////////////////////////////////////////////////////////////////////////////
 
 /*
 LoadTrustedSetup is the binding for:
@@ -357,18 +411,18 @@ GetSamplesAndProofs is the binding for:
 	    const Blob *blob,
 	    const KZGSettings *s);
 */
-func GetSamplesAndProofs(blob Blob) ([]Bytes32, []KZGProof, error) {
+func GetSamplesAndProofs(blob Blob) ([]Sample, []KZGProof, error) {
 	if !loaded {
 		panic("trusted setup isn't loaded")
 	}
-	samples := make([]Bytes32, FieldElementsPerBlob*2)
-	proofs := make([]KZGProof, (FieldElementsPerBlob*2)/16)
+	flattenedSamples := make([]Bytes32, GetDataCount())
+	proofs := make([]KZGProof, GetSampleCount())
 	ret := C.get_samples_and_proofs(
-		*(**C.Bytes32)(unsafe.Pointer(&samples)),
+		*(**C.Bytes32)(unsafe.Pointer(&flattenedSamples)),
 		*(**C.KZGProof)(unsafe.Pointer(&proofs)),
 		(*C.Blob)(unsafe.Pointer(&blob)),
 		&settings)
-	return samples, proofs, makeErrorFromRet(ret)
+	return chunk(flattenedSamples), proofs, makeErrorFromRet(ret)
 }
 
 /*
@@ -379,17 +433,15 @@ SamplesToBlob is the binding for:
 	    const Bytes32 *samples,
 	    const KZGSettings *s);
 */
-func SamplesToBlob(samples []Bytes32) (Blob, error) {
+func SamplesToBlob(samples []Sample) (Blob, error) {
 	if !loaded {
 		panic("trusted setup isn't loaded")
 	}
 	blob := Blob{}
-	if len(samples) != FieldElementsPerBlob*2 {
-		return blob, ErrBadArgs
-	}
+	flattenedSamples := flatten(samples)
 	ret := C.samples_to_blob(
 		(*C.Blob)(unsafe.Pointer(&blob)),
-		*(**C.Bytes32)(unsafe.Pointer(&samples)),
+		*(**C.Bytes32)(unsafe.Pointer(&flattenedSamples)),
 		&settings)
 	return blob, makeErrorFromRet(ret)
 }
@@ -402,44 +454,43 @@ RecoverSamples is the binding for:
 	    const Bytes32 *samples,
 	    const KZGSettings *s);
 */
-func RecoverSamples(samples []Bytes32) ([]Bytes32, error) {
+func RecoverSamples(samples []Sample) ([]Sample, error) {
 	if !loaded {
 		panic("trusted setup isn't loaded")
 	}
-	recovered := make([]Bytes32, FieldElementsPerBlob*2)
-	if len(samples) != FieldElementsPerBlob*2 {
-		return recovered, ErrBadArgs
-	}
+	flattenedRecovered := make([]Bytes32, GetDataCount())
+	flattenedSamples := flatten(samples)
 	ret := C.recover_samples(
-		*(**C.Bytes32)(unsafe.Pointer(&recovered)),
-		*(**C.Bytes32)(unsafe.Pointer(&samples)),
+		*(**C.Bytes32)(unsafe.Pointer(&flattenedRecovered)),
+		*(**C.Bytes32)(unsafe.Pointer(&flattenedSamples)),
 		&settings)
-	return samples, makeErrorFromRet(ret)
+	return chunk(flattenedSamples), makeErrorFromRet(ret)
 }
 
 /*
-VerifySamplesProof is the binding for:
+VerifySampleProof is the binding for:
 
-	C_KZG_RET verify_samples_proof(
+	C_KZG_RET verify_sample_proof(
 	    bool *ok,
 	    const Bytes48 *commitment_bytes,
 	    const Bytes48 *proof_bytes,
-	    const Bytes32 *samples,
-	    size_t n,
+	    const Bytes32 *sample,
 	    size_t index,
 	    const KZGSettings *s);
 */
-func VerifySamplesProof(commitmentBytes, proofBytes Bytes48, samples []Bytes32, index int) (bool, error) {
+func VerifySampleProof(commitment, proof Bytes48, sample Sample, index int) (bool, error) {
 	if !loaded {
 		panic("trusted setup isn't loaded")
 	}
+	if len(sample) != GetSampleSize() {
+		return false, ErrBadArgs
+	}
 	var result C.bool
-	ret := C.verify_samples_proof(
+	ret := C.verify_sample_proof(
 		&result,
-		(*C.Bytes48)(unsafe.Pointer(&commitmentBytes)),
-		(*C.Bytes48)(unsafe.Pointer(&proofBytes)),
-		*(**C.Bytes32)(unsafe.Pointer(&samples)),
-		(C.size_t)(len(samples)),
+		(*C.Bytes48)(unsafe.Pointer(&commitment)),
+		(*C.Bytes48)(unsafe.Pointer(&proof)),
+		*(**C.Bytes32)(unsafe.Pointer(&sample)),
 		(C.size_t)(index),
 		&settings)
 	return bool(result), makeErrorFromRet(ret)

@@ -396,10 +396,8 @@ func TestSampleProof(t *testing.T) {
 	samples, proofs, err := GetSamplesAndProofs(blob)
 	require.NoError(t, err)
 
-	chunkLen := GetSampleChunkSize()
 	for i := range proofs[:] {
-		samplesChunk := samples[i*chunkLen : (i+1)*chunkLen]
-		ok, err := VerifySamplesProof(Bytes48(commitment), Bytes48(proofs[i]), samplesChunk, i)
+		ok, err := VerifySampleProof(Bytes48(commitment), Bytes48(proofs[i]), samples[i], i)
 		require.NoError(t, err)
 		require.True(t, ok)
 	}
@@ -415,14 +413,18 @@ func Benchmark(b *testing.B) {
 	commitments := [length]Bytes48{}
 	proofs := [length]Bytes48{}
 	fields := [length]Bytes32{}
-	samples := [length][]Bytes32{}
+	samples := [length][]Sample{}
 	sampleProofs := [length][]KZGProof{}
-	partialSamples := [length][]Bytes32{}
+	partialSamples := [length][]Sample{}
 	nullVal := Bytes32{
 		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
 		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
 		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
 		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+	}
+	nullSample := make(Sample, GetSampleSize())
+	for i := range nullSample {
+		nullSample[i] = nullVal
 	}
 
 	for i := 0; i < length; i++ {
@@ -439,10 +441,10 @@ func Benchmark(b *testing.B) {
 		samples[i], sampleProofs[i], err = GetSamplesAndProofs(blobs[i])
 		require.NoError(b, err)
 
-		partialSamples[i] = make([]Bytes32, FieldElementsPerBlob*2)
-		for j := 0; j < FieldElementsPerBlob*2; j++ {
+		partialSamples[i] = make([]Sample, GetSampleCount())
+		for j := 0; j < GetSampleCount(); j++ {
 			if j%2 == 0 {
-				partialSamples[i][j] = nullVal
+				partialSamples[i][j] = nullSample
 			} else {
 				partialSamples[i][j] = samples[i][j]
 			}
@@ -489,27 +491,28 @@ func Benchmark(b *testing.B) {
 
 	b.Run("GetSamplesAndProofs", func(b *testing.B) {
 		for n := 0; n < b.N; n++ {
-			_, _, _ = GetSamplesAndProofs(blobs[0])
+			_, _, err := GetSamplesAndProofs(blobs[0])
+			require.Nil(b, err)
 		}
 	})
 
 	b.Run("SamplesToBlob", func(b *testing.B) {
 		for n := 0; n < b.N; n++ {
-			_, _ = SamplesToBlob(samples[0])
+			_, err := SamplesToBlob(samples[0])
+			require.Nil(b, err)
 		}
 	})
 
 	b.Run("RecoverSamples", func(b *testing.B) {
 		for n := 0; n < b.N; n++ {
-			_, _ = RecoverSamples(partialSamples[0])
+			_, err := RecoverSamples(partialSamples[0])
+			require.Nil(b, err)
 		}
 	})
 
-	b.Run("VerifySamplesProof", func(b *testing.B) {
-		chunkLen := GetSampleChunkSize()
-		samplesChunk := samples[0][0:chunkLen]
+	b.Run("VerifySampleProof", func(b *testing.B) {
 		for n := 0; n < b.N; n++ {
-			ok, err := VerifySamplesProof(commitments[0], Bytes48(sampleProofs[0][0]), samplesChunk, 0)
+			ok, err := VerifySampleProof(commitments[0], Bytes48(sampleProofs[0][0]), samples[0][0], 0)
 			require.Nil(b, err)
 			require.True(b, ok)
 		}

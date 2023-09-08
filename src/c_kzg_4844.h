@@ -243,12 +243,11 @@ C_KZG_RET recover_samples(
     Bytes32 *recovered, const Bytes32 *samples, const KZGSettings *s
 );
 
-C_KZG_RET verify_samples_proof(
+C_KZG_RET verify_sample_proof(
     bool *ok,
     const Bytes48 *commitment_bytes,
     const Bytes48 *proof_bytes,
-    const Bytes32 *samples,
-    size_t n,
+    const Bytes32 *sample,
     size_t index,
     const KZGSettings *s
 );
