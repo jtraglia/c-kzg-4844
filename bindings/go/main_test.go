@@ -49,6 +49,18 @@ func getRandBlob(seed int64) Blob {
 	return blob
 }
 
+func deleteSamples(samples []Sample, i int) []Sample {
+	partialSamples := make([]Sample, GetSampleCount())
+	for j := 0; j < GetSampleCount(); j++ {
+		if j%i == 0 {
+			partialSamples[j] = GetNullSample()
+		} else {
+			partialSamples[j] = samples[j]
+		}
+	}
+	return partialSamples
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Reference Tests
 ///////////////////////////////////////////////////////////////////////////////
@@ -416,16 +428,6 @@ func Benchmark(b *testing.B) {
 	samples := [length][]Sample{}
 	sampleProofs := [length][]KZGProof{}
 	partialSamples := [length][]Sample{}
-	nullVal := Bytes32{
-		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-	}
-	nullSample := make(Sample, GetSampleSize())
-	for i := range nullSample {
-		nullSample[i] = nullVal
-	}
 
 	for i := 0; i < length; i++ {
 		blob := getRandBlob(int64(i))
@@ -440,15 +442,7 @@ func Benchmark(b *testing.B) {
 		fields[i] = getRandFieldElement(int64(i))
 		samples[i], sampleProofs[i], err = GetSamplesAndProofs(blobs[i])
 		require.NoError(b, err)
-
-		partialSamples[i] = make([]Sample, GetSampleCount())
-		for j := 0; j < GetSampleCount(); j++ {
-			if j%2 == 0 {
-				partialSamples[i][j] = nullSample
-			} else {
-				partialSamples[i][j] = samples[i][j]
-			}
-		}
+		partialSamples[i] = deleteSamples(samples[i], 2)
 	}
 
 	b.Run("BlobToKZGCommitment", func(b *testing.B) {
@@ -503,12 +497,16 @@ func Benchmark(b *testing.B) {
 		}
 	})
 
-	b.Run("RecoverSamples", func(b *testing.B) {
-		for n := 0; n < b.N; n++ {
-			_, err := RecoverSamples(partialSamples[0])
-			require.Nil(b, err)
-		}
-	})
+	for i := 2; i <= 8; i *= 2 {
+		percentMissing := (1.0 / float64(i)) * 100
+		partial := deleteSamples(samples[0], i)
+		b.Run(fmt.Sprintf("RecoverSamples(missing=%2.1f%%)", percentMissing), func(b *testing.B) {
+			for n := 0; n < b.N; n++ {
+				_, err := RecoverSamples(partial)
+				require.Nil(b, err)
+			}
+		})
+	}
 
 	b.Run("VerifySampleProof", func(b *testing.B) {
 		for n := 0; n < b.N; n++ {

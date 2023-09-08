@@ -177,6 +177,20 @@ func GetSampleCount() int {
 	return GetDataCount() / GetSampleSize()
 }
 
+func GetNullSample() Sample {
+	nullVal := Bytes32{
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+	}
+	nullSample := make(Sample, GetSampleSize())
+	for i := range nullSample {
+		nullSample[i] = nullVal
+	}
+	return nullSample
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Interface Functions
 ///////////////////////////////////////////////////////////////////////////////
