@@ -174,7 +174,7 @@ func GetSampleCount() int {
 	if !loaded {
 		panic("trusted setup isn't loaded")
 	}
-	return GetDataCount() / GetSampleSize()
+	return int(settings.sample_count)
 }
 
 func GetNullSample() Sample {

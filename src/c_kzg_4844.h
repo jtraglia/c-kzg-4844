@@ -167,6 +167,7 @@ typedef struct {
     g1_t *g1_values_lagrange;
     g2_t *g2_values;
     uint64_t sample_size;
+    uint64_t sample_count;
     g1_t **x_ext_fft_files;
 } KZGSettings;
 
