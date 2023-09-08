@@ -1810,9 +1810,8 @@ static C_KZG_RET init_fk20_multi_settings(KZGSettings *s) {
     k = n / s->sample_size;
 
     /* Allocate space for array of pointers, this is a 2D array */
-    ret = c_kzg_calloc(
-        (void *)&s->x_ext_fft_files, s->sample_size, sizeof(g1_t **)
-    );
+    void **tmp = (void **)&s->x_ext_fft_files;
+    ret = c_kzg_calloc(tmp, s->sample_size, __SIZEOF_POINTER__);
     if (ret != C_KZG_OK) goto out;
 
     ret = new_g1_array(&x, k);
@@ -2900,7 +2899,9 @@ out:
  * Computes all the KZG proofs for data availability checks. This involves
  * sampling on the double domain and reordering according to reverse bit order.
  */
-static C_KZG_RET da_using_fk20_multi(g1_t *out, const poly_t *p, const KZGSettings *s) {
+static C_KZG_RET da_using_fk20_multi(
+    g1_t *out, const poly_t *p, const KZGSettings *s
+) {
     C_KZG_RET ret;
     uint64_t n = p->length, n2 = n * 2;
 
@@ -3099,7 +3100,9 @@ C_KZG_RET samples_to_blob(
     }
 
     /* Bit-reverse the samples */
-    ret = bit_reversal_permutation(samples_fr, sizeof(samples_fr[0]), s->max_width);
+    ret = bit_reversal_permutation(
+        samples_fr, sizeof(samples_fr[0]), s->max_width
+    );
     if (ret != C_KZG_OK) goto out;
 
     /* Get the polynomial via inverse transformation */
@@ -3156,7 +3159,9 @@ C_KZG_RET recover_samples(
     }
 
     /* Bit-reverse the samples */
-    ret = bit_reversal_permutation(samples_fr, sizeof(samples_fr[0]), s->max_width);
+    ret = bit_reversal_permutation(
+        samples_fr, sizeof(samples_fr[0]), s->max_width
+    );
     if (ret != C_KZG_OK) goto out;
 
     /* Call the implementation function to do the bulk of the work */
@@ -3169,7 +3174,9 @@ C_KZG_RET recover_samples(
     }
 
     /* Bit-reverse the recovered samples */
-    ret = bit_reversal_permutation(recovered, sizeof(recovered[0]), s->max_width);
+    ret = bit_reversal_permutation(
+        recovered, sizeof(recovered[0]), s->max_width
+    );
     if (ret != C_KZG_OK) goto out;
 
 out:
@@ -3199,22 +3206,17 @@ C_KZG_RET verify_sample_proof(
     C_KZG_RET ret;
     g1_t commitment, proof;
     fr_t x, *ys = NULL;
-    uint64_t n = s->sample_size;
 
     *ok = false;
 
-    /* Do some sanity checks */
-    if (n != s->sample_size) {
-        ret = C_KZG_BADARGS;
-        goto out;
-    }
+    /* Check that index is a valid value */
     if (index >= s->max_width / s->sample_size) {
         ret = C_KZG_BADARGS;
         goto out;
     }
 
     /* Allocate array for fr-form samples */
-    ret = new_fr_array(&ys, n);
+    ret = new_fr_array(&ys, s->sample_size);
     if (ret != C_KZG_OK) goto out;
 
     /* Convert untrusted inputs */
@@ -3222,7 +3224,7 @@ C_KZG_RET verify_sample_proof(
     if (ret != C_KZG_OK) goto out;
     ret = bytes_to_kzg_proof(&proof, proof_bytes);
     if (ret != C_KZG_OK) goto out;
-    for (size_t i = 0; i < n; i++) {
+    for (size_t i = 0; i < s->sample_size; i++) {
         ret = bytes_to_bls_field(&ys[i], &sample[i]);
         if (ret != C_KZG_OK) goto out;
     }
@@ -3233,11 +3235,13 @@ C_KZG_RET verify_sample_proof(
     x = s->expanded_roots_of_unity[pos];
 
     /* Reorder ys */
-    ret = bit_reversal_permutation(ys, sizeof(ys[0]), n);
+    ret = bit_reversal_permutation(ys, sizeof(ys[0]), s->sample_size);
     if (ret != C_KZG_OK) goto out;
 
     /* Check the proof */
-    ret = verify_kzg_proof_multi_impl(ok, &commitment, &proof, &x, ys, n, s);
+    ret = verify_kzg_proof_multi_impl(
+        ok, &commitment, &proof, &x, ys, s->sample_size, s
+    );
 
 out:
     c_kzg_free(ys);
