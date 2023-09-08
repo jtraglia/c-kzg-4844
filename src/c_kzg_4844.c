@@ -2539,7 +2539,7 @@ static C_KZG_RET recover_samples_impl(
     fr_t *eval_scaled_zero_poly = NULL;
     fr_t *scaled_reconstructed_poly = NULL;
 
-    poly_t zero_poly;
+    poly_t zero_poly = {NULL, 0};
     zero_poly.coeffs = NULL;
 
     /* Allocate space for arrays */
@@ -2834,7 +2834,7 @@ static C_KZG_RET fk20_multi_da_opt(
     C_KZG_RET ret;
     uint64_t n = p->length, n2 = n * 2, k, k2;
     g1_t *h_ext_fft = NULL, *h_ext_fft_file = NULL, *h = NULL;
-    poly_t toeplitz_coeffs;
+    poly_t toeplitz_coeffs = {NULL, 0};
 
     CHECK(n2 <= s->max_width);
     CHECK(is_power_of_two(n));
@@ -2939,7 +2939,7 @@ static C_KZG_RET verify_kzg_proof_multi_impl(
     const KZGSettings *s
 ) {
     C_KZG_RET ret;
-    poly_t interp;
+    poly_t interp = {NULL, 0};
     fr_t inv_x, inv_x_pow, x_pow;
     g2_t xn2, xn_minus_yn;
     g1_t is1, commit_minus_interp;
@@ -3032,7 +3032,7 @@ C_KZG_RET get_samples_and_proofs(
     ret = blob_to_polynomial((Polynomial *)poly, blob);
     if (ret != C_KZG_OK) goto out;
 
-    poly_t p;
+    poly_t p = {NULL, 0};
     p.length = s->max_width / 2;
     p.coeffs = poly;
     ret = da_using_fk20_multi(proofs_g1, &p, s);
