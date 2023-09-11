@@ -1826,6 +1826,31 @@ static void test_verify_sample_proof__succeeds_random_blob(void) {
     }
 }
 
+static void test_poly_conversion__succeeds_round_trip(void) {
+    C_KZG_RET ret;
+    Blob blob;
+    Polynomial a, b, c;
+    int diff;
+
+    get_rand_blob(&blob);
+
+    /* Convert the blob to a polynomial */
+    ret = blob_to_polynomial(&a, &blob);
+    ASSERT_EQUALS(ret, C_KZG_OK);
+
+    /* Make B a polynomial in monomial form */
+    ret = poly_to_monomial(&b, &a, &s);
+    ASSERT_EQUALS(ret, C_KZG_OK);
+
+    /* Make C a polynomial in lagrange form */
+    ret = poly_to_lagrange(&c, &b, &s);
+    ASSERT_EQUALS(ret, C_KZG_OK);
+
+    /* The result should match the first polynomial */
+    diff = memcmp(&a, &c, sizeof(Polynomial));
+    ASSERT_EQUALS(diff, 0);
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Profiling Functions
 ///////////////////////////////////////////////////////////////////////////////
@@ -2038,6 +2063,7 @@ int main(void) {
     RUN(test_expand_root_of_unity__fails_wrong_root_of_unity);
     RUN(test_reconstruct__succeeds_random_blob);
     RUN(test_verify_sample_proof__succeeds_random_blob);
+    RUN(test_poly_conversion__succeeds_round_trip);
 
     /*
      * These functions are only executed if we're profiling. To me, it makes
