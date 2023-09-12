@@ -2101,46 +2101,6 @@ static C_KZG_RET ifft_fr(
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Polynomial Conversion Functions
-///////////////////////////////////////////////////////////////////////////////
-
-C_KZG_RET poly_to_monomial(
-    Polynomial *monomial, const Polynomial *lagrange, const KZGSettings *s
-) {
-    C_KZG_RET ret;
-
-    ret = ifft_fr(monomial->evals, lagrange->evals, FIELD_ELEMENTS_PER_BLOB, s);
-    if (ret != C_KZG_OK) goto out;
-    ret = bit_reversal_permutation(
-        monomial->evals, sizeof(fr_t), FIELD_ELEMENTS_PER_BLOB
-    );
-    if (ret != C_KZG_OK) goto out;
-
-out:
-    return ret;
-}
-
-C_KZG_RET poly_to_lagrange(
-    Polynomial *lagrange, const Polynomial *monomial, const KZGSettings *s
-) {
-    C_KZG_RET ret;
-    Polynomial monomial_brp;
-
-    memcpy(&monomial_brp, monomial, sizeof(Polynomial));
-    ret = bit_reversal_permutation(
-        monomial_brp.evals, sizeof(fr_t), FIELD_ELEMENTS_PER_BLOB
-    );
-    if (ret != C_KZG_OK) goto out;
-    ret = fft_fr(
-        lagrange->evals, monomial_brp.evals, FIELD_ELEMENTS_PER_BLOB, s
-    );
-    if (ret != C_KZG_OK) goto out;
-
-out:
-    return ret;
-}
-
-///////////////////////////////////////////////////////////////////////////////
 // Zero poly
 ///////////////////////////////////////////////////////////////////////////////
 
