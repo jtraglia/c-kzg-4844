@@ -867,7 +867,7 @@ out:
 ///////////////////////////////////////////////////////////////////////////////
 
 /**
- * Compute a KZG commitment from a polynomial.
+ * Compute a KZG commitment from a polynomial (in monomial form).
  *
  * @param[out] out The resulting commitment
  * @param[in]  p   The polynomial to commit to
@@ -879,6 +879,15 @@ C_KZG_RET poly_to_kzg_commitment_monomial(
 ) {
     return g1_lincomb_fast(out, s->g1_values, p, n);
 }
+
+/**
+ * Compute a KZG commitment from a polynomial (in lagrange form).
+ *
+ * @param[out] out The resulting commitment
+ * @param[in]  p   The polynomial to commit to
+ * @param[in]  n   The polynomial length
+ * @param[in]  s   The trusted setup
+ */
 C_KZG_RET poly_to_kzg_commitment_lagrange(
     g1_t *out, const fr_t *p, size_t n, const KZGSettings *s
 ) {
@@ -901,7 +910,6 @@ C_KZG_RET BLOB_TO_KZG_COMMITMENT(
 
     ret = blob_to_polynomial(&p, blob);
     if (ret != C_KZG_OK) return ret;
-    /* XXX: change to monomial for sample proofs to work */
     ret = poly_to_kzg_commitment_lagrange(
         &commitment, p.evals, FIELD_ELEMENTS_PER_BLOB, s
     );
