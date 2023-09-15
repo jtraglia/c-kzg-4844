@@ -2672,6 +2672,44 @@ out:
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// Polynomial Conversion Functions
+///////////////////////////////////////////////////////////////////////////////
+
+C_KZG_RET poly_monomial_to_lagrange(
+    fr_t *monomial, const fr_t *lagrange, size_t len, const KZGSettings *s
+) {
+    C_KZG_RET ret;
+
+    ret = fft_fr(monomial, lagrange, len, s);
+    if (ret != C_KZG_OK) goto out;
+    ret = bit_reversal_permutation(monomial, sizeof(fr_t), len);
+    if (ret != C_KZG_OK) goto out;
+
+out:
+    return ret;
+}
+
+C_KZG_RET poly_lagrange_to_monomial(
+    fr_t *lagrange, const fr_t *monomial, size_t len, const KZGSettings *s
+) {
+    C_KZG_RET ret;
+    fr_t *monomial_brp = NULL;
+
+    ret = new_fr_array(&monomial_brp, len);
+    if (ret != C_KZG_OK) goto out;
+
+    memcpy(monomial_brp, monomial, sizeof(fr_t) * len);
+
+    ret = bit_reversal_permutation(monomial_brp, sizeof(fr_t), len);
+    if (ret != C_KZG_OK) goto out;
+    ret = ifft_fr(lagrange, monomial_brp, len, s);
+    if (ret != C_KZG_OK) goto out;
+
+out:
+    return ret;
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // Sample Proofs
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -3019,12 +3057,15 @@ C_KZG_RET get_samples_and_proofs(
     Bytes32 *samples, KZGProof *proofs, const Blob *blob, const KZGSettings *s
 ) {
     C_KZG_RET ret;
-    fr_t *poly = NULL;
+    fr_t *poly_monomial = NULL;
+    fr_t *poly_lagrange = NULL;
     fr_t *samples_fr = NULL;
     g1_t *proofs_g1 = NULL;
 
     /* Allocate space fr-form arrays */
-    ret = new_fr_array(&poly, s->max_width);
+    ret = new_fr_array(&poly_monomial, s->max_width);
+    if (ret != C_KZG_OK) goto out;
+    ret = new_fr_array(&poly_lagrange, s->max_width);
     if (ret != C_KZG_OK) goto out;
     ret = new_fr_array(&samples_fr, s->sample_count * s->sample_size);
     if (ret != C_KZG_OK) goto out;
@@ -3032,7 +3073,8 @@ C_KZG_RET get_samples_and_proofs(
     if (ret != C_KZG_OK) goto out;
 
     /* Initialize all of the polynomial fields to zero */
-    memset(poly, 0, sizeof(fr_t) * s->max_width);
+    memset(poly_monomial, 0, sizeof(fr_t) * s->max_width);
+    memset(poly_lagrange, 0, sizeof(fr_t) * s->max_width);
 
     /*
      * Convert the blob to a polynomial. Note that only the first 4096 fields
@@ -3040,17 +3082,22 @@ C_KZG_RET get_samples_and_proofs(
      * This is required because the polynomial will be evaluated with 8192
      * roots of unity.
      */
-    ret = blob_to_polynomial((Polynomial *)poly, blob);
+    ret = blob_to_polynomial((Polynomial *)poly_lagrange, blob);
     if (ret != C_KZG_OK) goto out;
+
+    ret = poly_lagrange_to_monomial(poly_monomial, poly_lagrange, FIELD_ELEMENTS_PER_BLOB, s);
+    if (ret != C_KZG_OK) goto out;
+    //ret = ifft_fr(poly_monomial, poly_lagrange, FIELD_ELEMENTS_PER_BLOB, s);
+    //if (ret != C_KZG_OK) goto out;
 
     poly_t p = {NULL, 0};
     p.length = s->max_width / 2;
-    p.coeffs = poly;
+    p.coeffs = poly_monomial;
     ret = da_using_fk20_multi(proofs_g1, &p, s);
     if (ret != C_KZG_OK) goto out;
 
     /* Get the samples via forward transformation */
-    ret = fft_fr(samples_fr, poly, s->max_width, s);
+    ret = fft_fr(samples_fr, poly_monomial, s->max_width, s);
     if (ret != C_KZG_OK) goto out;
 
     /* Convert all of the samples to byte-form */
@@ -3062,13 +3109,18 @@ C_KZG_RET get_samples_and_proofs(
     ret = bit_reversal_permutation(samples, sizeof(samples[0]), s->max_width);
     if (ret != C_KZG_OK) goto out;
 
+    /* Bit-reverse the proofs */
+    ret = bit_reversal_permutation(proofs, sizeof(proofs[0]), s->sample_count);
+    if (ret != C_KZG_OK) goto out;
+
     /* Convert all of the proofs to byte-form */
     for (size_t i = 0; i < s->sample_count; i++) {
         bytes_from_g1(&proofs[i], &proofs_g1[i]);
     }
 
 out:
-    c_kzg_free(poly);
+    c_kzg_free(poly_monomial);
+    c_kzg_free(poly_lagrange);
     c_kzg_free(samples_fr);
     c_kzg_free(proofs_g1);
     return ret;
@@ -3087,43 +3139,9 @@ out:
 C_KZG_RET samples_to_blob(
     Blob *blob, const Bytes32 *samples, const KZGSettings *s
 ) {
-    C_KZG_RET ret;
-    fr_t *poly = NULL;
-    fr_t *samples_fr = NULL;
-
-    /* Allocate space fr-form arrays */
-    ret = new_fr_array(&poly, s->max_width);
-    if (ret != C_KZG_OK) goto out;
-    ret = new_fr_array(&samples_fr, s->max_width);
-    if (ret != C_KZG_OK) goto out;
-
-    /* Convert the samples to fr-form */
-    for (size_t i = 0; i < s->max_width; i++) {
-        ret = bytes_to_bls_field(&samples_fr[i], &samples[i]);
-        if (ret != C_KZG_OK) goto out;
-    }
-
-    /* Bit-reverse the samples */
-    ret = bit_reversal_permutation(
-        samples_fr, sizeof(samples_fr[0]), s->max_width
-    );
-    if (ret != C_KZG_OK) goto out;
-
-    /* Get the polynomial via inverse transformation */
-    ret = ifft_fr(poly, samples_fr, s->max_width, s);
-    if (ret != C_KZG_OK) goto out;
-
-    /* Convert the polynomial to a blob */
-    Bytes32 *field = (Bytes32 *)blob->bytes;
-    for (size_t i = 0; i < FIELD_ELEMENTS_PER_BLOB; i++) {
-        bytes_from_bls_field(field, &poly[i]);
-        field++;
-    }
-
-out:
-    c_kzg_free(poly);
-    c_kzg_free(samples_fr);
-    return ret;
+    (void)s; // Will be used later.
+    memcpy(&blob->bytes, samples, BYTES_PER_BLOB);
+    return C_KZG_OK;
 }
 
 /**

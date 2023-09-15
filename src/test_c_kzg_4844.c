@@ -130,6 +130,30 @@ static void eval_poly(fr_t *out, fr_t *poly_coefficients, fr_t *x) {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// Debugging functions
+///////////////////////////////////////////////////////////////////////////////
+
+void print_bytes32(const Bytes32 *bytes) {
+    for (size_t i = 0; i < 32; i++) {
+        printf("%02x", bytes->bytes[i]);
+    }
+    printf("\n");
+}
+
+void print_fr(const fr_t *f) {
+    Bytes32 bytes;
+    bytes_from_bls_field(&bytes, f);
+    print_bytes32(&bytes);
+}
+
+void print_blob(const Blob *blob) {
+    for (size_t i = 0; i < FIELD_ELEMENTS_PER_BLOB; i++) {
+        Bytes32 *field = (Bytes32 *)&blob->bytes[i * BYTES_PER_FIELD_ELEMENT];
+        print_bytes32(field);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // Tests for memory allocation functions
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -1730,6 +1754,32 @@ static void test_expand_root_of_unity__fails_wrong_root_of_unity(void) {
 // Tests for reconstruction
 ///////////////////////////////////////////////////////////////////////////////
 
+static void test_get_samples__succeeds_first_half_is_blob(void) {
+    C_KZG_RET ret;
+    Blob blob;
+    size_t n = s.max_width;
+    Bytes32 *samples = NULL;
+    KZGProof *proofs = NULL;
+    int diff;
+
+    /* Allocate arrays */
+    ret = c_kzg_calloc((void **)&samples, n, sizeof(Bytes32));
+    ASSERT_EQUALS(ret, C_KZG_OK);
+    ret = c_kzg_calloc((void **)&proofs, n, sizeof(KZGProof));
+    ASSERT_EQUALS(ret, C_KZG_OK);
+
+    /* Get a random blob */
+    get_rand_blob(&blob);
+
+    /* Get the samples and proofs */
+    ret = get_samples_and_proofs(samples, proofs, &blob, &s);
+    ASSERT_EQUALS(ret, C_KZG_OK);
+
+    /* Ensure the first half of the samples is the blob */
+    diff = memcmp(blob.bytes, samples, sizeof(Blob));
+    ASSERT_EQUALS(diff, 0);
+}
+
 static void test_reconstruct__succeeds_random_blob(void) {
     C_KZG_RET ret;
     Blob blob;
@@ -1824,6 +1874,44 @@ static void test_verify_sample_proof__succeeds_random_blob(void) {
         verify_sample_proof(&ok, &commitment, &proofs[i], sample, i, &s);
         ASSERT_EQUALS(ok, true);
     }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Tests for polynomial conversions
+///////////////////////////////////////////////////////////////////////////////
+
+static void test_poly_conversion__succeeds_round_trip(void) {
+    C_KZG_RET ret;
+    Blob blob;
+    fr_t *a = NULL;
+    fr_t *b = NULL;
+    fr_t *c = NULL;
+    int diff;
+
+    ret = new_fr_array(&a, FIELD_ELEMENTS_PER_BLOB);
+    ASSERT_EQUALS(ret, C_KZG_OK);
+    ret = new_fr_array(&b, FIELD_ELEMENTS_PER_BLOB);
+    ASSERT_EQUALS(ret, C_KZG_OK);
+    ret = new_fr_array(&c, FIELD_ELEMENTS_PER_BLOB);
+    ASSERT_EQUALS(ret, C_KZG_OK);
+
+    get_rand_blob(&blob);
+
+    /* Convert the blob to a polynomial */
+    ret = blob_to_polynomial((Polynomial *)a, &blob);
+    ASSERT_EQUALS(ret, C_KZG_OK);
+
+    /* Make B a polynomial in monomial form */
+    ret = poly_lagrange_to_monomial(b, a, FIELD_ELEMENTS_PER_BLOB, &s);
+    ASSERT_EQUALS(ret, C_KZG_OK);
+
+    /* Make C a polynomial in lagrange form */
+    ret = poly_monomial_to_lagrange(c, b, FIELD_ELEMENTS_PER_BLOB, &s);
+    ASSERT_EQUALS(ret, C_KZG_OK);
+
+    /* The result should match the first polynomial */
+    diff = memcmp(a, c, sizeof(fr_t) * FIELD_ELEMENTS_PER_BLOB);
+    ASSERT_EQUALS(diff, 0);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -2036,8 +2124,10 @@ int main(void) {
     RUN(test_expand_root_of_unity__succeeds_with_root);
     RUN(test_expand_root_of_unity__fails_not_root_of_unity);
     RUN(test_expand_root_of_unity__fails_wrong_root_of_unity);
+    RUN(test_get_samples__succeeds_first_half_is_blob);
     RUN(test_reconstruct__succeeds_random_blob);
     RUN(test_verify_sample_proof__succeeds_random_blob);
+    RUN(test_poly_conversion__succeeds_round_trip);
 
     /*
      * These functions are only executed if we're profiling. To me, it makes
