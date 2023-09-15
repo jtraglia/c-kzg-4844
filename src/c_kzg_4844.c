@@ -1815,7 +1815,7 @@ static C_KZG_RET init_fk20_multi_settings(KZGSettings *s) {
     g1_t *x = NULL;
 
     n = s->max_width / 2;
-    s->sample_size = min(n, 16);
+    s->sample_size = min(n, 64);
     s->sample_count = s->max_width / s->sample_size;
     k = n / s->sample_size;
 
