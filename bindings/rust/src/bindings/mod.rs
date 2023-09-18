@@ -211,6 +211,31 @@ impl Blob {
     pub fn from_hex(hex_str: &str) -> Result<Self, Error> {
         Self::from_bytes(&hex_to_bytes(hex_str)?)
     }
+
+    pub fn samples_and_proofs(
+        &self,
+        kzg_settings: &KZGSettings,
+    ) -> Result<(Vec<Bytes32>, Vec<KZGProof>), Error> {
+        let samples_len = kzg_settings.max_width as usize;
+        let proofs_len = kzg_settings.sample_count as usize;
+
+        let mut samples = Vec::with_capacity(samples_len);
+        let mut proofs = Vec::with_capacity(proofs_len);
+
+        unsafe {
+            let res = get_samples_and_proofs(
+                samples.as_mut_ptr(),
+                proofs.as_mut_ptr(),
+                self,
+                kzg_settings,
+            );
+            if res != C_KZG_RET::C_KZG_OK {
+                return Err(Error::CError(res));
+            }
+        }
+
+        Ok((samples, proofs))
+    }
 }
 
 impl Bytes32 {
@@ -397,6 +422,31 @@ impl KZGProof {
                 commitments_bytes.as_ptr(),
                 proofs_bytes.as_ptr(),
                 blobs.len(),
+                kzg_settings,
+            );
+            if let C_KZG_RET::C_KZG_OK = res {
+                Ok(verified.assume_init())
+            } else {
+                Err(Error::CError(res))
+            }
+        }
+    }
+
+    pub fn verify_sample_kzg_proof(
+        sample: Bytes32,
+        index: usize,
+        commitment_bytes: Bytes48,
+        proof_bytes: Bytes48,
+        kzg_settings: &KZGSettings,
+    ) -> Result<bool, Error> {
+        let mut verified: MaybeUninit<bool> = MaybeUninit::uninit();
+        unsafe {
+            let res = verify_sample_proof(
+                verified.as_mut_ptr(),
+                &commitment_bytes,
+                &proof_bytes,
+                &sample,
+                index,
                 kzg_settings,
             );
             if let C_KZG_RET::C_KZG_OK = res {
