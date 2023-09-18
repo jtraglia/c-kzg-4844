@@ -215,7 +215,7 @@ impl Blob {
     pub fn samples_and_proofs(
         &self,
         kzg_settings: &KZGSettings,
-    ) -> Result<(Vec<Bytes32>, Vec<KZGProof>), Error> {
+    ) -> Result<Vec<(Vec<Bytes32>, KZGProof)>, Error> {
         let samples_len = kzg_settings.max_width as usize;
         let proofs_len = kzg_settings.sample_count as usize;
 
@@ -234,7 +234,11 @@ impl Blob {
             }
         }
 
-        Ok((samples, proofs))
+        let sample_len = kzg_settings.sample_size as usize;
+        let samples = samples.chunks_exact(sample_len).map(Vec::from);
+
+        let ret = samples.zip(proofs).collect();
+        Ok(ret)
     }
 }
 
@@ -433,7 +437,7 @@ impl KZGProof {
     }
 
     pub fn verify_sample_kzg_proof(
-        sample: Bytes32,
+        sample: Vec<Bytes32>,
         index: usize,
         commitment_bytes: Bytes48,
         proof_bytes: Bytes48,
@@ -445,7 +449,7 @@ impl KZGProof {
                 verified.as_mut_ptr(),
                 &commitment_bytes,
                 &proof_bytes,
-                &sample,
+                sample.as_ptr(),
                 index,
                 kzg_settings,
             );
@@ -659,6 +663,21 @@ mod tests {
             &kzg_settings
         )
         .unwrap());
+
+        let blob = generate_random_blob(&mut rng);
+        let commitment =
+            KZGCommitment::blob_to_kzg_commitment(blob.clone(), &kzg_settings).unwrap();
+        let samples_and_proofs = blob.samples_and_proofs(&kzg_settings).unwrap();
+        for (i, (sample, proof)) in samples_and_proofs.into_iter().enumerate() {
+            KZGProof::verify_sample_kzg_proof(
+                sample,
+                i,
+                commitment.to_bytes(),
+                proof.to_bytes(),
+                &kzg_settings,
+            )
+            .unwrap();
+        }
     }
 
     #[test]
