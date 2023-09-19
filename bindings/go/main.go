@@ -423,7 +423,7 @@ func VerifyBlobKZGProofBatch(blobs []Blob, commitmentsBytes, proofsBytes []Bytes
 GetSamplesAndProofs is the binding for:
 
 	C_KZG_RET get_samples_and_proofs(
-	    Bytes32 *samples,
+	    Bytes32 *data,
 	    KZGProof *proofs,
 	    const Blob *blob,
 	    const KZGSettings *s);
@@ -432,17 +432,17 @@ func GetSamplesAndProofs(blob Blob) ([]Sample, []KZGProof, error) {
 	if !loaded {
 		panic("trusted setup isn't loaded")
 	}
-	flattenedSamples := make([]Bytes32, GetDataCount())
+	data := make([]Bytes32, GetDataCount())
 	proofs := make([]KZGProof, GetSampleCount())
 	err := makeErrorFromRet(C.get_samples_and_proofs(
-		*(**C.Bytes32)(unsafe.Pointer(&flattenedSamples)),
+		*(**C.Bytes32)(unsafe.Pointer(&data)),
 		*(**C.KZGProof)(unsafe.Pointer(&proofs)),
 		(*C.Blob)(unsafe.Pointer(&blob)),
 		&settings))
 	if err != nil {
 		return []Sample{}, []KZGProof{}, err
 	}
-	samples, err := chunk(flattenedSamples)
+	samples, err := chunk(data)
 	if err != nil {
 		return []Sample{}, []KZGProof{}, err
 	}
@@ -454,7 +454,7 @@ SamplesToBlob is the binding for:
 
 	C_KZG_RET samples_to_blob(
 	    Blob *blob,
-	    const Bytes32 *samples,
+	    const Bytes32 *data,
 	    const KZGSettings *s);
 */
 func SamplesToBlob(samples []Sample) (Blob, error) {
@@ -462,13 +462,13 @@ func SamplesToBlob(samples []Sample) (Blob, error) {
 		panic("trusted setup isn't loaded")
 	}
 	blob := Blob{}
-	flattenedSamples, err := flatten(samples)
+	data, err := flatten(samples)
 	if err != nil {
 		return blob, err
 	}
 	ret := C.samples_to_blob(
 		(*C.Blob)(unsafe.Pointer(&blob)),
-		*(**C.Bytes32)(unsafe.Pointer(&flattenedSamples)),
+		*(**C.Bytes32)(unsafe.Pointer(&data)),
 		&settings)
 	return blob, makeErrorFromRet(ret)
 }
@@ -478,26 +478,26 @@ RecoverSamples is the binding for:
 
 	C_KZG_RET recover_samples(
 	    Bytes32 *recovered,
-	    const Bytes32 *samples,
+	    const Bytes32 *data,
 	    const KZGSettings *s);
 */
 func RecoverSamples(samples []Sample) ([]Sample, error) {
 	if !loaded {
 		panic("trusted setup isn't loaded")
 	}
-	flattenedRecovered := make([]Bytes32, GetDataCount())
-	flattenedSamples, err := flatten(samples)
+	recoveredData := make([]Bytes32, GetDataCount())
+	partialData, err := flatten(samples)
 	if err != nil {
 		return []Sample{}, err
 	}
 	err = makeErrorFromRet(C.recover_samples(
-		*(**C.Bytes32)(unsafe.Pointer(&flattenedRecovered)),
-		*(**C.Bytes32)(unsafe.Pointer(&flattenedSamples)),
+		*(**C.Bytes32)(unsafe.Pointer(&recoveredData)),
+		*(**C.Bytes32)(unsafe.Pointer(&partialData)),
 		&settings))
 	if err != nil {
 		return []Sample{}, err
 	}
-	recovered, err := chunk(flattenedSamples)
+	recovered, err := chunk(recoveredData)
 	if err != nil {
 		return []Sample{}, err
 	}
@@ -511,7 +511,7 @@ VerifySampleProof is the binding for:
 	    bool *ok,
 	    const Bytes48 *commitment_bytes,
 	    const Bytes48 *proof_bytes,
-	    const Bytes32 *sample,
+	    const Bytes32 *data,
 	    size_t index,
 	    const KZGSettings *s);
 */

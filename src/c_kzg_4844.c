@@ -3047,27 +3047,25 @@ out:
 ///////////////////////////////////////////////////////////////////////////////
 
 /**
- * Given a blob, get 2n samples and 2n/16 proofs.
+ * Given a blob, get DATA_COUNT data points and SAMPLE_COUNT proofs.
  *
- * @param[out]  samples A preallocated array for samples
- * @param[out]  proofs  A preallocated array for sample proofs
+ * @param[out]  data    An array of DATA_COUNT data points
+ * @param[out]  proofs  An array of SAMPLE_COUNT proofs
  * @param[in]   blob    The blob to get samples for
  * @param[in]   s       The trusted setup
  *
- * @remark Where n is the number of fields in the blob.
- * @remark If a blob has 4096 fields, there will be 8192 samples.
- * @remark If a blob has 4096 fields, there will be 512 proofs.
- * @remark Use samples_to_blob to convert the samples into a blob.
+ * @remark Where DATA_COUNT is SAMPLES_COUNT * SAMPLE_LEN.
+ * @remark Use samples_to_blob to convert the data points into a blob.
  * @remark Up to half of these samples may be lost.
  * @remark Use recover_samples to recover missing samples.
  */
 C_KZG_RET get_samples_and_proofs(
-    Bytes32 *samples, KZGProof *proofs, const Blob *blob, const KZGSettings *s
+    Bytes32 *data, KZGProof *proofs, const Blob *blob, const KZGSettings *s
 ) {
     C_KZG_RET ret;
     fr_t *poly_monomial = NULL;
     fr_t *poly_lagrange = NULL;
-    fr_t *samples_fr = NULL;
+    fr_t *data_fr = NULL;
     g1_t *proofs_g1 = NULL;
 
     /* Allocate space fr-form arrays */
@@ -3075,7 +3073,7 @@ C_KZG_RET get_samples_and_proofs(
     if (ret != C_KZG_OK) goto out;
     ret = new_fr_array(&poly_lagrange, s->max_width);
     if (ret != C_KZG_OK) goto out;
-    ret = new_fr_array(&samples_fr, s->sample_count * s->sample_size);
+    ret = new_fr_array(&data_fr, s->sample_count * s->sample_size);
     if (ret != C_KZG_OK) goto out;
     ret = new_g1_array(&proofs_g1, s->sample_count);
     if (ret != C_KZG_OK) goto out;
@@ -3093,10 +3091,12 @@ C_KZG_RET get_samples_and_proofs(
     ret = blob_to_polynomial((Polynomial *)poly_lagrange, blob);
     if (ret != C_KZG_OK) goto out;
 
-    ret = poly_lagrange_to_monomial(poly_monomial, poly_lagrange, FIELD_ELEMENTS_PER_BLOB, s);
+    ret = poly_lagrange_to_monomial(
+        poly_monomial, poly_lagrange, FIELD_ELEMENTS_PER_BLOB, s
+    );
     if (ret != C_KZG_OK) goto out;
-    //ret = ifft_fr(poly_monomial, poly_lagrange, FIELD_ELEMENTS_PER_BLOB, s);
-    //if (ret != C_KZG_OK) goto out;
+    // ret = ifft_fr(poly_monomial, poly_lagrange, FIELD_ELEMENTS_PER_BLOB, s);
+    // if (ret != C_KZG_OK) goto out;
 
     poly_t p = {NULL, 0};
     p.length = s->max_width / 2;
@@ -3104,17 +3104,17 @@ C_KZG_RET get_samples_and_proofs(
     ret = da_using_fk20_multi(proofs_g1, &p, s);
     if (ret != C_KZG_OK) goto out;
 
-    /* Get the samples via forward transformation */
-    ret = fft_fr(samples_fr, poly_monomial, s->max_width, s);
+    /* Get the data points via forward transformation */
+    ret = fft_fr(data_fr, poly_monomial, s->max_width, s);
     if (ret != C_KZG_OK) goto out;
 
     /* Convert all of the samples to byte-form */
     for (size_t i = 0; i < s->max_width; i++) {
-        bytes_from_bls_field(&samples[i], &samples_fr[i]);
+        bytes_from_bls_field(&data[i], &data_fr[i]);
     }
 
-    /* Bit-reverse the samples */
-    ret = bit_reversal_permutation(samples, sizeof(samples[0]), s->max_width);
+    /* Bit-reverse the data points */
+    ret = bit_reversal_permutation(data, sizeof(data[0]), s->max_width);
     if (ret != C_KZG_OK) goto out;
 
     /* Bit-reverse the proofs */
@@ -3129,81 +3129,79 @@ C_KZG_RET get_samples_and_proofs(
 out:
     c_kzg_free(poly_monomial);
     c_kzg_free(poly_lagrange);
-    c_kzg_free(samples_fr);
+    c_kzg_free(data_fr);
     c_kzg_free(proofs_g1);
     return ret;
 }
 
 /**
- * Given 2n samples, get a blob.
+ * Given DATA_COUNT data points, get a blob.
  *
- * @param[out]  samples A preallocated array for samples
- * @param[in]   blob    The blob to get samples for
+ * @param[out]  blob    The resultant blob from the data points
+ * @param[in]   data    An array of DATA_COUNT data points
  * @param[in]   s       The trusted setup
  *
- * @remark Where n is the number of fields in the blob.
- * @remark If a blob has 4096 fields, you need 8192 samples.
+ * @remark Where DATA_COUNT is SAMPLES_COUNT * SAMPLE_LEN.
+ * @remark The array of data points must be in the correct order.
  */
 C_KZG_RET samples_to_blob(
-    Blob *blob, const Bytes32 *samples, const KZGSettings *s
+    Blob *blob, const Bytes32 *data, const KZGSettings *s
 ) {
     (void)s; // Will be used later.
-    memcpy(&blob->bytes, samples, BYTES_PER_BLOB);
+    memcpy(&blob->bytes, data, BYTES_PER_BLOB);
     return C_KZG_OK;
 }
 
 /**
- * Given at least n samples, recover the missing samples.
+ * Given at least DATA_COUNT/2 of data points, recover the missing data points.
  *
- * @param[out]  recovered   A preallocated array for recovered samples
- * @param[in]   samples     The samples that you have
+ * @param[out]  recovered   An array of DATA_COUNT data points
+ * @param[in]   data        An array of DATA_COUNT data points
  * @param[in]   s           The trusted setup
  *
- * @remark Where n is the number of fields in the blob.
- * @remark The array of samples must be 2n length and in the correct order.
- * @remark Missing samples are marked as 0xffff...ffff (32 bytes).
- * @remark Recovery is faster if there are fewer missing samples.
+ * @remark Where DATA_COUNT is SAMPLES_COUNT * SAMPLE_LEN.
+ * @remark The array of data points must be in the correct order.
+ * @remark Missing data points are marked as 0xffff...ffff (32 bytes).
+ * @remark Recovery is faster if there are fewer missing data points.
  */
 C_KZG_RET recover_samples(
-    Bytes32 *recovered, const Bytes32 *samples, const KZGSettings *s
+    Bytes32 *recovered, const Bytes32 *data, const KZGSettings *s
 ) {
     C_KZG_RET ret;
     fr_t *recovered_fr = NULL;
-    fr_t *samples_fr = NULL;
+    fr_t *data_fr = NULL;
 
     /* Allocate space fr-form arrays */
     ret = new_fr_array(&recovered_fr, s->max_width);
     if (ret != C_KZG_OK) goto out;
-    ret = new_fr_array(&samples_fr, s->max_width);
+    ret = new_fr_array(&data_fr, s->max_width);
     if (ret != C_KZG_OK) goto out;
 
-    /* Convert samples to fr-form */
+    /* Convert data points to fr-form */
     for (size_t i = 0; i < s->max_width; i++) {
-        /* Missing samples are marked as 0xffff...ffff */
-        if (!memcmp(&samples[i].bytes, &FR_NULL, sizeof(Bytes32))) {
-            samples_fr[i] = FR_NULL;
+        /* Missing data points are marked as 0xffff...ffff */
+        if (!memcmp(&data[i].bytes, &FR_NULL, sizeof(Bytes32))) {
+            data_fr[i] = FR_NULL;
         } else {
-            ret = bytes_to_bls_field(&samples_fr[i], &samples[i]);
+            ret = bytes_to_bls_field(&data_fr[i], &data[i]);
             if (ret != C_KZG_OK) goto out;
         }
     }
 
-    /* Bit-reverse the samples */
-    ret = bit_reversal_permutation(
-        samples_fr, sizeof(samples_fr[0]), s->max_width
-    );
+    /* Bit-reverse the data points */
+    ret = bit_reversal_permutation(data_fr, sizeof(data_fr[0]), s->max_width);
     if (ret != C_KZG_OK) goto out;
 
     /* Call the implementation function to do the bulk of the work */
-    ret = recover_samples_impl(recovered_fr, samples_fr, s);
+    ret = recover_samples_impl(recovered_fr, data_fr, s);
     if (ret != C_KZG_OK) goto out;
 
-    /* Convert the recovered samples to byte-form */
+    /* Convert the recovered data points to byte-form */
     for (size_t i = 0; i < s->max_width; i++) {
         bytes_from_bls_field(&recovered[i], &recovered_fr[i]);
     }
 
-    /* Bit-reverse the recovered samples */
+    /* Bit-reverse the recovered data points */
     ret = bit_reversal_permutation(
         recovered, sizeof(recovered[0]), s->max_width
     );
@@ -3211,17 +3209,17 @@ C_KZG_RET recover_samples(
 
 out:
     c_kzg_free(recovered_fr);
-    c_kzg_free(samples_fr);
+    c_kzg_free(data_fr);
     return ret;
 }
 
 /**
- * Given a sample, verify that the proof is valid.
+ * Given SAMPLE_LEN data points, verify that the proof is valid.
  *
  * @param[out]  ok                  True if the proof are valid, otherwise false
  * @param[in]   commitment_bytes    The commitment to the blob's samples
  * @param[in]   proof_bytes         The proof for the sample
- * @param[in]   sample              The sample to check
+ * @param[in]   data                The sample to check
  * @param[in]   index               The sample/proof index
  * @param[in]   s                   The trusted setup
  */
@@ -3229,7 +3227,7 @@ C_KZG_RET verify_sample_proof(
     bool *ok,
     const Bytes48 *commitment_bytes,
     const Bytes48 *proof_bytes,
-    const Bytes32 *sample,
+    const Bytes32 *data,
     size_t index,
     const KZGSettings *s
 ) {
@@ -3245,7 +3243,7 @@ C_KZG_RET verify_sample_proof(
         goto out;
     }
 
-    /* Allocate array for fr-form samples */
+    /* Allocate array for fr-form data points */
     ret = new_fr_array(&ys, s->sample_size);
     if (ret != C_KZG_OK) goto out;
 
@@ -3255,7 +3253,7 @@ C_KZG_RET verify_sample_proof(
     ret = bytes_to_kzg_proof(&proof, proof_bytes);
     if (ret != C_KZG_OK) goto out;
     for (size_t i = 0; i < s->sample_size; i++) {
-        ret = bytes_to_bls_field(&ys[i], &sample[i]);
+        ret = bytes_to_bls_field(&ys[i], &data[i]);
         if (ret != C_KZG_OK) goto out;
     }
 
