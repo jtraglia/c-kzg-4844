@@ -3095,8 +3095,6 @@ C_KZG_RET get_samples_and_proofs(
         poly_monomial, poly_lagrange, FIELD_ELEMENTS_PER_BLOB, s
     );
     if (ret != C_KZG_OK) goto out;
-    // ret = ifft_fr(poly_monomial, poly_lagrange, FIELD_ELEMENTS_PER_BLOB, s);
-    // if (ret != C_KZG_OK) goto out;
 
     poly_t p = {NULL, 0};
     p.length = s->max_width / 2;
