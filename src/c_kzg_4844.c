@@ -3169,6 +3169,18 @@ C_KZG_RET recover_samples(
     fr_t *recovered_fr = NULL;
     fr_t *data_fr = NULL;
 
+    /* Check if there's a missing data point */
+    for (size_t i = 0; i < s->max_width; i++) {
+        if (!memcmp(&data[i].bytes, &FR_NULL, sizeof(Bytes32))) {
+            goto recover;
+        }
+    }
+
+    /* Nothing is missing, copy original data and return */
+    memcpy(recovered, data, sizeof(Bytes32) * s->max_width);
+    return C_KZG_OK;
+
+recover:
     /* Allocate space fr-form arrays */
     ret = new_fr_array(&recovered_fr, s->max_width);
     if (ret != C_KZG_OK) goto out;

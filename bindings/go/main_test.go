@@ -415,6 +415,15 @@ func TestSampleProof(t *testing.T) {
 	}
 }
 
+func TestRecoverNoMissing(t *testing.T) {
+	blob := getRandBlob(0)
+	samples, _, err := GetSamplesAndProofs(blob)
+	require.NoError(t, err)
+	recovered, err := RecoverSamples(samples)
+	require.NoError(t, err)
+	require.Equal(t, recovered, samples)
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Benchmarks
 ///////////////////////////////////////////////////////////////////////////////
