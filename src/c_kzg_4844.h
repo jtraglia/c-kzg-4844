@@ -168,6 +168,7 @@ typedef struct {
     g2_t *g2_values;
     uint64_t sample_size;
     uint64_t sample_count;
+    uint64_t blob_count;
     g1_t **x_ext_fft_files;
 } KZGSettings;
 
@@ -233,22 +234,22 @@ C_KZG_RET VERIFY_BLOB_KZG_PROOF_BATCH(
 );
 
 C_KZG_RET get_samples_and_proofs(
-    Bytes32 *samples, KZGProof *proofs, const Blob *blob, const KZGSettings *s
+    Bytes32 *data, KZGProof *proofs, const Blob *blob, const KZGSettings *s
 );
 
 C_KZG_RET samples_to_blob(
-    Blob *blob, const Bytes32 *samples, const KZGSettings *s
+    Blob *blob, const Bytes32 *data, const KZGSettings *s
 );
 
 C_KZG_RET recover_samples(
-    Bytes32 *recovered, const Bytes32 *samples, const KZGSettings *s
+    Bytes32 *recovered, const Bytes32 *data, const KZGSettings *s
 );
 
 C_KZG_RET verify_sample_proof(
     bool *ok,
     const Bytes48 *commitment_bytes,
     const Bytes48 *proof_bytes,
-    const Bytes32 *sample,
+    const Bytes32 *data,
     size_t index,
     const KZGSettings *s
 );

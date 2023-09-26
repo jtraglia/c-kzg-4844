@@ -1796,6 +1796,7 @@ void FREE_TRUSTED_SETUP(KZGSettings *s) {
     }
     s->sample_size = 0;
     s->sample_count = 0;
+    s->blob_count = 0;
     c_kzg_free(s->x_ext_fft_files);
 }
 
@@ -1815,9 +1816,10 @@ static C_KZG_RET init_fk20_multi_settings(KZGSettings *s) {
     g1_t *x = NULL;
 
     n = s->max_width / 2;
-    s->sample_size = min(n, 64);
+    s->sample_size = min(n / 2, 16);
     s->sample_count = s->max_width / s->sample_size;
     k = n / s->sample_size;
+    s->blob_count = k;
 
     if (s->sample_size >= TRUSTED_SETUP_NUM_G2_POINTS) {
         ret = C_KZG_BADARGS;
@@ -1879,6 +1881,7 @@ C_KZG_RET LOAD_TRUSTED_SETUP(
     out->g2_values = NULL;
     out->sample_size = 0;
     out->sample_count = 0;
+    out->blob_count = 0;
     out->x_ext_fft_files = NULL;
 
     /* Sanity check in case this is called directly */
@@ -2545,6 +2548,7 @@ static void unscale_poly(fr_t *p, uint64_t len_p) {
  * @param[in]   samples     The samples that you have
  * @param[in]   s           The trusted setup
  *
+ * @remark `recovered` and `samples` can point to the same memory.
  * @remark The array of samples must be 2n length and in the correct order.
  * @remark Missing samples should be equal to FR_NULL.
  */
@@ -2559,6 +2563,7 @@ static C_KZG_RET recover_samples_impl(
     fr_t *eval_scaled_poly_with_zero = NULL;
     fr_t *eval_scaled_zero_poly = NULL;
     fr_t *scaled_reconstructed_poly = NULL;
+    fr_t *samples_brp = NULL;
 
     poly_t zero_poly = {NULL, 0};
     zero_poly.coeffs = NULL;
@@ -2578,16 +2583,25 @@ static C_KZG_RET recover_samples_impl(
     if (ret != C_KZG_OK) goto out;
     ret = new_fr_array(&scaled_reconstructed_poly, s->max_width);
     if (ret != C_KZG_OK) goto out;
+    ret = new_fr_array(&samples_brp, s->max_width);
+    if (ret != C_KZG_OK) goto out;
 
     /* Allocate space for the zero poly */
     ret = new_fr_array(&zero_poly.coeffs, s->max_width);
     if (ret != C_KZG_OK) goto out;
     zero_poly.length = s->max_width;
 
+    /* Bit-reverse the data points */
+    memcpy(samples_brp, samples, s->max_width * sizeof(fr_t));
+    ret = bit_reversal_permutation(
+        samples_brp, sizeof(samples_brp[0]), s->max_width
+    );
+    if (ret != C_KZG_OK) goto out;
+
     /* Identify missing samples */
     uint64_t len_missing = 0;
     for (uint64_t i = 0; i < s->max_width; i++) {
-        if (fr_is_null(&samples[i])) {
+        if (fr_is_null(&samples_brp[i])) {
             missing[len_missing++] = i;
         }
     }
@@ -2606,11 +2620,11 @@ static C_KZG_RET recover_samples_impl(
 
     // Construct E * Z_r,I: the loop makes the evaluation polynomial
     for (size_t i = 0; i < s->max_width; i++) {
-        if (fr_is_null(&samples[i])) {
+        if (fr_is_null(&samples_brp[i])) {
             poly_evaluations_with_zero[i] = FR_ZERO;
         } else {
             blst_fr_mul(
-                &poly_evaluations_with_zero[i], &samples[i], &zero_eval[i]
+                &poly_evaluations_with_zero[i], &samples_brp[i], &zero_eval[i]
             );
         }
     }
@@ -2666,6 +2680,12 @@ static C_KZG_RET recover_samples_impl(
     ret = fft_fr(recovered, reconstructed_poly, s->max_width, s);
     if (ret != C_KZG_OK) goto out;
 
+    /* Bit-reverse the recovered data points */
+    ret = bit_reversal_permutation(
+        recovered, sizeof(recovered[0]), s->max_width
+    );
+    if (ret != C_KZG_OK) goto out;
+
 out:
     c_kzg_free(missing);
     c_kzg_free(zero_eval);
@@ -2675,7 +2695,7 @@ out:
     c_kzg_free(eval_scaled_zero_poly);
     c_kzg_free(scaled_reconstructed_poly);
     c_kzg_free(zero_poly.coeffs);
-
+    c_kzg_free(samples_brp);
     return ret;
 }
 
@@ -3043,31 +3063,55 @@ out:
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// Helper Functions for 2D Recovery
+///////////////////////////////////////////////////////////////////////////////
+
+static size_t get_missing_count(const fr_t *data, size_t length) {
+    size_t missing_count = 0;
+    for (size_t i = 0; i < length; i++) {
+        if (fr_equal(&data[i], &FR_NULL)) {
+            missing_count++;
+        }
+    }
+    return missing_count;
+}
+
+static void get_column(
+    fr_t *column, fr_t **data, size_t index, const KZGSettings *s
+) {
+    for (size_t i = 0; i < s->sample_count; i++) {
+        for (size_t j = 0; j < s->sample_size; j++) {
+            size_t col_index = (i * s->sample_size) + j;
+            size_t row_index = (index * s->sample_size) + j;
+            column[col_index] = data[i][row_index];
+        }
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // Data Availability Sampling Functions
 ///////////////////////////////////////////////////////////////////////////////
 
 /**
- * Given a blob, get 2n samples and 2n/16 proofs.
+ * Given a blob, get DATA_COUNT data points and SAMPLE_COUNT proofs.
  *
- * @param[out]  samples A preallocated array for samples
- * @param[out]  proofs  A preallocated array for sample proofs
+ * @param[out]  data    An array of DATA_COUNT data points
+ * @param[out]  proofs  An array of SAMPLE_COUNT proofs
  * @param[in]   blob    The blob to get samples for
  * @param[in]   s       The trusted setup
  *
- * @remark Where n is the number of fields in the blob.
- * @remark If a blob has 4096 fields, there will be 8192 samples.
- * @remark If a blob has 4096 fields, there will be 512 proofs.
- * @remark Use samples_to_blob to convert the samples into a blob.
+ * @remark Where DATA_COUNT is SAMPLES_COUNT * SAMPLE_LEN.
+ * @remark Use samples_to_blob to convert the data points into a blob.
  * @remark Up to half of these samples may be lost.
  * @remark Use recover_samples to recover missing samples.
  */
 C_KZG_RET get_samples_and_proofs(
-    Bytes32 *samples, KZGProof *proofs, const Blob *blob, const KZGSettings *s
+    Bytes32 *data, KZGProof *proofs, const Blob *blob, const KZGSettings *s
 ) {
     C_KZG_RET ret;
     fr_t *poly_monomial = NULL;
     fr_t *poly_lagrange = NULL;
-    fr_t *samples_fr = NULL;
+    fr_t *data_fr = NULL;
     g1_t *proofs_g1 = NULL;
 
     /* Allocate space fr-form arrays */
@@ -3075,7 +3119,7 @@ C_KZG_RET get_samples_and_proofs(
     if (ret != C_KZG_OK) goto out;
     ret = new_fr_array(&poly_lagrange, s->max_width);
     if (ret != C_KZG_OK) goto out;
-    ret = new_fr_array(&samples_fr, s->sample_count * s->sample_size);
+    ret = new_fr_array(&data_fr, s->sample_count * s->sample_size);
     if (ret != C_KZG_OK) goto out;
     ret = new_g1_array(&proofs_g1, s->sample_count);
     if (ret != C_KZG_OK) goto out;
@@ -3093,10 +3137,10 @@ C_KZG_RET get_samples_and_proofs(
     ret = blob_to_polynomial((Polynomial *)poly_lagrange, blob);
     if (ret != C_KZG_OK) goto out;
 
-    ret = poly_lagrange_to_monomial(poly_monomial, poly_lagrange, FIELD_ELEMENTS_PER_BLOB, s);
+    ret = poly_lagrange_to_monomial(
+        poly_monomial, poly_lagrange, FIELD_ELEMENTS_PER_BLOB, s
+    );
     if (ret != C_KZG_OK) goto out;
-    //ret = ifft_fr(poly_monomial, poly_lagrange, FIELD_ELEMENTS_PER_BLOB, s);
-    //if (ret != C_KZG_OK) goto out;
 
     poly_t p = {NULL, 0};
     p.length = s->max_width / 2;
@@ -3104,17 +3148,17 @@ C_KZG_RET get_samples_and_proofs(
     ret = da_using_fk20_multi(proofs_g1, &p, s);
     if (ret != C_KZG_OK) goto out;
 
-    /* Get the samples via forward transformation */
-    ret = fft_fr(samples_fr, poly_monomial, s->max_width, s);
+    /* Get the data points via forward transformation */
+    ret = fft_fr(data_fr, poly_monomial, s->max_width, s);
     if (ret != C_KZG_OK) goto out;
 
     /* Convert all of the samples to byte-form */
     for (size_t i = 0; i < s->max_width; i++) {
-        bytes_from_bls_field(&samples[i], &samples_fr[i]);
+        bytes_from_bls_field(&data[i], &data_fr[i]);
     }
 
-    /* Bit-reverse the samples */
-    ret = bit_reversal_permutation(samples, sizeof(samples[0]), s->max_width);
+    /* Bit-reverse the data points */
+    ret = bit_reversal_permutation(data, sizeof(data[0]), s->max_width);
     if (ret != C_KZG_OK) goto out;
 
     /* Bit-reverse the proofs */
@@ -3129,99 +3173,409 @@ C_KZG_RET get_samples_and_proofs(
 out:
     c_kzg_free(poly_monomial);
     c_kzg_free(poly_lagrange);
-    c_kzg_free(samples_fr);
+    c_kzg_free(data_fr);
     c_kzg_free(proofs_g1);
     return ret;
 }
 
 /**
- * Given 2n samples, get a blob.
+ * Given BLOB_COUNT blobs, generate a 2D array of samples.
  *
- * @param[out]  samples A preallocated array for samples
- * @param[in]   blob    The blob to get samples for
+ * @param[out]  data    An array of DATA_COUNT data points
+ * @param[in]   blobs   The blobs to generate samples for
  * @param[in]   s       The trusted setup
  *
- * @remark Where n is the number of fields in the blob.
- * @remark If a blob has 4096 fields, you need 8192 samples.
+ * @remark Where BLOB_COUNT is FIELD_ELEMENTS_PER_BLOB / SAMPLE_SIZE.
+ * @remark Where DATA_COUNT is SAMPLES_COUNT^2 * SAMPLE_LEN.
  */
-C_KZG_RET samples_to_blob(
-    Blob *blob, const Bytes32 *samples, const KZGSettings *s
-) {
-    (void)s; // Will be used later.
-    memcpy(&blob->bytes, samples, BYTES_PER_BLOB);
-    return C_KZG_OK;
-}
-
-/**
- * Given at least n samples, recover the missing samples.
- *
- * @param[out]  recovered   A preallocated array for recovered samples
- * @param[in]   samples     The samples that you have
- * @param[in]   s           The trusted setup
- *
- * @remark Where n is the number of fields in the blob.
- * @remark The array of samples must be 2n length and in the correct order.
- * @remark Missing samples are marked as 0xffff...ffff (32 bytes).
- * @remark Recovery is faster if there are fewer missing samples.
- */
-C_KZG_RET recover_samples(
-    Bytes32 *recovered, const Bytes32 *samples, const KZGSettings *s
+C_KZG_RET get_2d_samples(
+    Bytes32 *data, const Blob *blobs, const KZGSettings *s
 ) {
     C_KZG_RET ret;
-    fr_t *recovered_fr = NULL;
-    fr_t *samples_fr = NULL;
+    fr_t **data_fr = NULL;
+    fr_t **monomial_polys = NULL;
+    fr_t **lagrange_polys = NULL;
+    size_t n = 2 * s->blob_count;
+    fr_t *column_poly = NULL;
+    fr_t *column_poly_lagrange = NULL;
+    fr_t *column_data = NULL;
 
-    /* Allocate space fr-form arrays */
-    ret = new_fr_array(&recovered_fr, s->max_width);
+    /* Allocate 2D arrays */
+    ret = c_kzg_calloc((void **)&data_fr, n, sizeof(fr_t *));
+    if (ret != C_KZG_OK) goto out_pre_2d;
+    ret = c_kzg_calloc((void **)&monomial_polys, n, sizeof(fr_t *));
+    if (ret != C_KZG_OK) goto out_pre_2d;
+    ret = c_kzg_calloc((void **)&lagrange_polys, n, sizeof(fr_t *));
+    if (ret != C_KZG_OK) goto out_pre_2d;
+
+    /* Initialize 2D arrays as NULL */
+    for (size_t i = 0; i < n; i++) {
+        data_fr[i] = NULL;
+        monomial_polys[i] = NULL;
+        lagrange_polys[i] = NULL;
+    }
+
+    /* Allocate 2D arrays */
+    for (size_t i = 0; i < n; i++) {
+        ret = new_fr_array(&data_fr[i], s->max_width);
+        if (ret != C_KZG_OK) goto out;
+        ret = new_fr_array(&monomial_polys[i], s->max_width);
+        if (ret != C_KZG_OK) goto out;
+        ret = new_fr_array(&lagrange_polys[i], s->max_width);
+        if (ret != C_KZG_OK) goto out;
+    }
+
+    /* Allocate arrays for the column poly */
+    ret = new_fr_array(&column_poly, s->max_width);
     if (ret != C_KZG_OK) goto out;
-    ret = new_fr_array(&samples_fr, s->max_width);
+    ret = new_fr_array(&column_poly_lagrange, s->max_width);
+    if (ret != C_KZG_OK) goto out;
+    ret = new_fr_array(&column_data, s->max_width);
     if (ret != C_KZG_OK) goto out;
 
-    /* Convert samples to fr-form */
-    for (size_t i = 0; i < s->max_width; i++) {
-        /* Missing samples are marked as 0xffff...ffff */
-        if (!memcmp(&samples[i].bytes, &FR_NULL, sizeof(Bytes32))) {
-            samples_fr[i] = FR_NULL;
-        } else {
-            ret = bytes_to_bls_field(&samples_fr[i], &samples[i]);
-            if (ret != C_KZG_OK) goto out;
+    /* Extend each blob */
+    for (size_t i = 0; i < s->blob_count; i++) {
+        /* Initialize all of the polynomial fields to zero */
+        memset(monomial_polys[i], 0, sizeof(fr_t) * s->max_width);
+        memset(lagrange_polys[i], 0, sizeof(fr_t) * s->max_width);
+
+        /* Convert blob to lagrange & monomial forms */
+        ret = blob_to_polynomial((Polynomial *)lagrange_polys[i], &blobs[i]);
+        if (ret != C_KZG_OK) goto out;
+        ret = poly_lagrange_to_monomial(
+            monomial_polys[i], lagrange_polys[i], FIELD_ELEMENTS_PER_BLOB, s
+        );
+        if (ret != C_KZG_OK) goto out;
+
+        /* Get the data points via forward transformation */
+        ret = fft_fr(data_fr[i], monomial_polys[i], s->max_width, s);
+        if (ret != C_KZG_OK) goto out;
+
+        /* Bit-reverse the data points */
+        ret = bit_reversal_permutation(
+            data_fr[i], sizeof(data_fr[i][0]), s->max_width
+        );
+        if (ret != C_KZG_OK) goto out;
+    }
+
+    /* Extend each column */
+    for (size_t i = 0; i < s->sample_count; i++) {
+        /* Initialize the poly to all zeros */
+        memset(column_poly, 0, sizeof(fr_t) * s->max_width);
+        size_t index = 0;
+
+        /* Make the column polynomial */
+        for (size_t j = 0; j < s->blob_count; j++) {
+            for (size_t k = 0; k < s->sample_size; k++) {
+                size_t row_index = (i * s->sample_size) + k;
+                column_poly[index] = data_fr[j][row_index];
+                index++;
+            }
+        }
+
+        /* Convert the column to lagrange form */
+        ret = poly_lagrange_to_monomial(
+            column_poly_lagrange, column_poly, FIELD_ELEMENTS_PER_BLOB, s
+        );
+        if (ret != C_KZG_OK) goto out;
+
+        /* Generate samples for poly */
+        ret = fft_fr(column_data, column_poly_lagrange, s->max_width, s);
+        if (ret != C_KZG_OK) goto out;
+
+        /* Bit-reverse the data points */
+        ret = bit_reversal_permutation(
+            column_data, sizeof(column_data[0]), s->max_width
+        );
+        if (ret != C_KZG_OK) goto out;
+
+        /* Copy column back into data array */
+        for (size_t j = s->blob_count; j < n; j++) {
+            for (size_t k = 0; k < s->sample_size; k++) {
+                size_t row_index = (i * s->sample_size) + k;
+                data_fr[j][row_index] = column_data[index];
+                index++;
+            }
         }
     }
 
-    /* Bit-reverse the samples */
-    ret = bit_reversal_permutation(
-        samples_fr, sizeof(samples_fr[0]), s->max_width
-    );
-    if (ret != C_KZG_OK) goto out;
-
-    /* Call the implementation function to do the bulk of the work */
-    ret = recover_samples_impl(recovered_fr, samples_fr, s);
-    if (ret != C_KZG_OK) goto out;
-
-    /* Convert the recovered samples to byte-form */
-    for (size_t i = 0; i < s->max_width; i++) {
-        bytes_from_bls_field(&recovered[i], &recovered_fr[i]);
+    /* Convert the results to bytes */
+    for (size_t i = 0; i < n; i++) {
+        for (size_t j = 0; j < s->max_width; j++) {
+            bytes_from_bls_field(&data[i * s->max_width + j], &data_fr[i][j]);
+        }
     }
 
-    /* Bit-reverse the recovered samples */
-    ret = bit_reversal_permutation(
-        recovered, sizeof(recovered[0]), s->max_width
-    );
-    if (ret != C_KZG_OK) goto out;
-
 out:
-    c_kzg_free(recovered_fr);
-    c_kzg_free(samples_fr);
+    for (size_t i = 0; i < n; i++) {
+        c_kzg_free(monomial_polys[i]);
+        c_kzg_free(lagrange_polys[i]);
+        c_kzg_free(data_fr[i]);
+    }
+out_pre_2d:
+    c_kzg_free(monomial_polys);
+    c_kzg_free(lagrange_polys);
+    c_kzg_free(data_fr);
+    c_kzg_free(column_poly);
+    c_kzg_free(column_poly_lagrange);
+    c_kzg_free(column_data);
     return ret;
 }
 
 /**
- * Given a sample, verify that the proof is valid.
+ * Given DATA_COUNT data points, get a blob.
+ *
+ * @param[out]  blob    The resultant blob from the data points
+ * @param[in]   data    An array of DATA_COUNT data points
+ * @param[in]   s       The trusted setup
+ *
+ * @remark Where DATA_COUNT is SAMPLES_COUNT * SAMPLE_LEN.
+ * @remark The array of data points must be in the correct order.
+ */
+C_KZG_RET samples_to_blob(
+    Blob *blob, const Bytes32 *data, const KZGSettings *s
+) {
+    (void)s; // Will be used later.
+    memcpy(&blob->bytes, data, BYTES_PER_BLOB);
+    return C_KZG_OK;
+}
+
+/**
+ * Given at least DATA_COUNT/2 of data points, recover the missing data points.
+ *
+ * @param[out]  recovered   An array of DATA_COUNT data points
+ * @param[in]   data        An array of DATA_COUNT data points
+ * @param[in]   s           The trusted setup
+ *
+ * @remark Where DATA_COUNT is SAMPLES_COUNT * SAMPLE_LEN.
+ * @remark The array of data points must be in the correct order.
+ * @remark Missing data points are marked as 0xffff...ffff (32 bytes).
+ * @remark Recovery is faster if there are fewer missing data points.
+ */
+C_KZG_RET recover_samples(
+    Bytes32 *recovered, const Bytes32 *data, const KZGSettings *s
+) {
+    C_KZG_RET ret;
+    fr_t *recovered_fr = NULL;
+
+    /* Check if there's a missing data point */
+    for (size_t i = 0; i < s->max_width; i++) {
+        if (!memcmp(&data[i].bytes, &FR_NULL, sizeof(Bytes32))) {
+            goto recover;
+        }
+    }
+
+    /* Nothing is missing, copy original data and return */
+    memcpy(recovered, data, sizeof(Bytes32) * s->max_width);
+    return C_KZG_OK;
+
+recover:
+    /* Allocate space fr-form arrays */
+    ret = new_fr_array(&recovered_fr, s->max_width);
+    if (ret != C_KZG_OK) goto out;
+
+    /* Convert data points to fr-form */
+    for (size_t i = 0; i < s->max_width; i++) {
+        /* Missing data points are marked as 0xffff...ffff */
+        if (!memcmp(&data[i].bytes, &FR_NULL, sizeof(Bytes32))) {
+            recovered_fr[i] = FR_NULL;
+        } else {
+            ret = bytes_to_bls_field(&recovered_fr[i], &data[i]);
+            if (ret != C_KZG_OK) goto out;
+        }
+    }
+
+    /* Call the implementation function to do the bulk of the work */
+    ret = recover_samples_impl(recovered_fr, recovered_fr, s);
+    if (ret != C_KZG_OK) goto out;
+
+    /* Convert the recovered data points to byte-form */
+    for (size_t i = 0; i < s->max_width; i++) {
+        bytes_from_bls_field(&recovered[i], &recovered_fr[i]);
+    }
+
+out:
+    c_kzg_free(recovered_fr);
+    return ret;
+}
+
+/**
+ * Given at least 75% of data points, recover the missing data points.
+ *
+ * @param[out]  recovered   A flat array of DATA_COUNT data points
+ * @param[in]   data        A flat array of DATA_COUNT data points
+ * @param[in]   s           The trusted setup
+ *
+ * @remark Where DATA_COUNT is SAMPLES_COUNT^2 * SAMPLE_LEN.
+ * @remark The array of data points must be in the correct order.
+ * @remark The 2D array is a SAMPLES_COUNT x SAMPLES_COUNT in size.
+ * @remark Missing data points are marked as 0xffff...ffff (32 bytes).
+ * @remark Recovery is faster if there are fewer missing data points.
+ */
+C_KZG_RET recover_2d_samples(
+    Bytes32 *recovered, const Bytes32 *data, const KZGSettings *s
+) {
+    C_KZG_RET ret;
+    fr_t **recovered_fr = NULL;
+    fr_t *column = NULL;
+    fr_t *recovered_column = NULL;
+    size_t n = 2 * s->blob_count;
+    size_t total_data_count = n * s->max_width;
+    size_t missing_count = 0;
+    bool *complete_rows = NULL;
+    bool *complete_cols = NULL;
+
+    /* Allocate space fr-form arrays */
+    ret = c_kzg_calloc((void **)&recovered_fr, n, sizeof(fr_t *));
+    if (ret != C_KZG_OK) goto out_pre_2d;
+
+    /* Initialize 2D arrays as NULL */
+    for (size_t i = 0; i < n; i++) {
+        recovered_fr[i] = NULL;
+    }
+
+    /* Allocate 2D array values */
+    for (size_t i = 0; i < n; i++) {
+        ret = new_fr_array(&recovered_fr[i], s->max_width);
+        if (ret != C_KZG_OK) goto out;
+    }
+
+    /* Allocate space for a column, unnecessary for rows */
+    ret = new_fr_array(&column, s->max_width);
+    if (ret != C_KZG_OK) goto out;
+    ret = new_fr_array(&recovered_column, s->max_width);
+    if (ret != C_KZG_OK) goto out;
+
+    /* Allocate space for incomplete tracking array */
+    ret = c_kzg_calloc((void **)&complete_rows, n, sizeof(bool));
+    if (ret != C_KZG_OK) goto out;
+    ret = c_kzg_calloc((void **)&complete_cols, n, sizeof(bool));
+    if (ret != C_KZG_OK) goto out;
+
+    /* Initialize everything as complete */
+    memset(complete_rows, true, n);
+    memset(complete_cols, true, n);
+
+    /* Convert data points to fr-form */
+    for (size_t i = 0; i < n; i++) {
+        for (size_t j = 0; j < s->max_width; j++) {
+            size_t index = i * s->max_width + j;
+            if (!memcmp(&data[index].bytes, &FR_NULL, sizeof(Bytes32))) {
+                /* Track count */
+                missing_count++;
+
+                /* Use null value to mark it as missing */
+                recovered_fr[i][j] = FR_NULL;
+
+                /* Mark this row/col as incomplete */
+                complete_rows[i] = false;
+                complete_cols[j] = false;
+            } else {
+                /* Convert the data to fr-form */
+                ret = bytes_to_bls_field(&recovered_fr[i][j], &data[index]);
+                if (ret != C_KZG_OK) goto out;
+            }
+        }
+    }
+
+    /* If nothing is missing, copy original data and return */
+    if (missing_count == 0) {
+        memcpy(recovered, data, sizeof(Bytes32) * s->max_width);
+        goto out;
+    }
+
+    /* Ensure there's enough info to recover */
+    if (missing_count * 4 > total_data_count) {
+        /* More than 25% is missing */
+        ret = C_KZG_BADARGS;
+        goto out;
+    }
+
+    /* Recover rows */
+    for (size_t i = 0; i < n; i++) {
+        /* Skip if the row is already complete */
+        if (complete_rows[i]) continue;
+
+        /* Calculate how many data points are missing */
+        size_t missing = get_missing_count(recovered_fr[i], s->max_width);
+        if (missing == 0 || missing > FIELD_ELEMENTS_PER_BLOB) continue;
+
+        /* Call the implementation function to do the bulk of the work */
+        ret = recover_samples_impl(recovered_fr[i], recovered_fr[i], s);
+        if (ret != C_KZG_OK) goto out;
+
+        /* Mark this row as complete */
+        complete_rows[i] = true;
+    }
+
+    /* Recover columns */
+    for (size_t i = 0; i < n; i++) {
+        /* Skip if the column is already complete */
+        if (complete_cols[i]) continue;
+
+        /* Get the column for this index */
+        get_column(column, recovered_fr, i, s);
+
+        /* Calculate how many data points are missing */
+        size_t missing = get_missing_count(column, s->max_width);
+        if (missing == 0 || missing > FIELD_ELEMENTS_PER_BLOB) continue;
+
+        /* Call the implementation function to do the bulk of the work */
+        ret = recover_samples_impl(recovered_column, column, s);
+        if (ret != C_KZG_OK) goto out;
+
+        /* Save column to recovered data */
+        for (size_t j = 0; j < s->sample_count; j++) {
+            for (size_t k = 0; k < s->sample_size; k++) {
+                size_t col_index = (j * s->sample_size) + k;
+                size_t row_index = (i * s->sample_size) + k;
+                recovered_fr[j][row_index] = recovered_column[col_index];
+            }
+        }
+    }
+
+    /* Recover rows */
+    for (size_t i = 0; i < n; i++) {
+        /* Skip if the row is already complete */
+        if (complete_rows[i]) continue;
+
+        /* Calculate how many data points are missing */
+        size_t missing = get_missing_count(recovered_fr[i], s->max_width);
+        if (missing == 0 || missing > FIELD_ELEMENTS_PER_BLOB) continue;
+
+        /* Call the implementation function to do the bulk of the work */
+        ret = recover_samples_impl(recovered_fr[i], recovered_fr[i], s);
+        if (ret != C_KZG_OK) goto out;
+    }
+
+    /* Convert the recovered data points to byte-form */
+    for (size_t i = 0; i < n; i++) {
+        for (size_t j = 0; j < s->max_width; j++) {
+            size_t index = i * s->max_width + j;
+            bytes_from_bls_field(&recovered[index], &recovered_fr[i][j]);
+        }
+    }
+
+out_pre_2d:
+    for (size_t i = 0; i < n; i++) {
+        c_kzg_free(recovered_fr[i]);
+    }
+out:
+    c_kzg_free(recovered_fr);
+    c_kzg_free(column);
+    c_kzg_free(recovered_column);
+    c_kzg_free(complete_rows);
+    c_kzg_free(complete_cols);
+    return ret;
+}
+
+/**
+ * Given SAMPLE_LEN data points, verify that the proof is valid.
  *
  * @param[out]  ok                  True if the proof are valid, otherwise false
  * @param[in]   commitment_bytes    The commitment to the blob's samples
  * @param[in]   proof_bytes         The proof for the sample
- * @param[in]   sample              The sample to check
+ * @param[in]   data                The sample to check
  * @param[in]   index               The sample/proof index
  * @param[in]   s                   The trusted setup
  */
@@ -3229,7 +3583,7 @@ C_KZG_RET verify_sample_proof(
     bool *ok,
     const Bytes48 *commitment_bytes,
     const Bytes48 *proof_bytes,
-    const Bytes32 *sample,
+    const Bytes32 *data,
     size_t index,
     const KZGSettings *s
 ) {
@@ -3245,7 +3599,7 @@ C_KZG_RET verify_sample_proof(
         goto out;
     }
 
-    /* Allocate array for fr-form samples */
+    /* Allocate array for fr-form data points */
     ret = new_fr_array(&ys, s->sample_size);
     if (ret != C_KZG_OK) goto out;
 
@@ -3255,7 +3609,7 @@ C_KZG_RET verify_sample_proof(
     ret = bytes_to_kzg_proof(&proof, proof_bytes);
     if (ret != C_KZG_OK) goto out;
     for (size_t i = 0; i < s->sample_size; i++) {
-        ret = bytes_to_bls_field(&ys[i], &sample[i]);
+        ret = bytes_to_bls_field(&ys[i], &data[i]);
         if (ret != C_KZG_OK) goto out;
     }
 

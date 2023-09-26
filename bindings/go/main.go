@@ -51,6 +51,7 @@ var (
 	ErrInvalidDataLength  = errors.New("invalid data length")
 	ErrInvalidSampleCount = errors.New("invalid sample count")
 	ErrInvalidSampleSize  = errors.New("invalid sample size")
+	ErrInvalidBlobCount   = errors.New("invalid blob count")
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -137,6 +138,21 @@ func chunk(data []Bytes32) ([]Sample, error) {
 	return samples, nil
 }
 
+func chunk2d(data []Bytes32) ([][]Sample, error) {
+	if len(data) != GetSampleCount()*GetDataCount() {
+		return [][]Sample{}, ErrInvalidDataLength
+	}
+	samples := make([][]Sample, GetSampleCount())
+	for i := range samples {
+		var err error
+		samples[i], err = chunk(data[i*GetDataCount() : (i+1)*GetDataCount()])
+		if err != nil {
+			return [][]Sample{}, ErrInvalidDataLength
+		}
+	}
+	return samples, nil
+}
+
 func flatten(samples []Sample) ([]Bytes32, error) {
 	if len(samples) != GetSampleCount() {
 		return []Bytes32{}, ErrInvalidSampleCount
@@ -153,6 +169,22 @@ func flatten(samples []Sample) ([]Bytes32, error) {
 		data[i] = samples[i/sampleSize][i%sampleSize]
 	}
 	return data, nil
+}
+
+func flatten2d(samples [][]Sample) ([]Bytes32, error) {
+	if len(samples) != GetSampleCount() {
+		return []Bytes32{}, ErrInvalidSampleCount
+	}
+	data := make([]Bytes32, GetSampleCount()*GetDataCount())
+	for i, row := range samples {
+		rowData, err := flatten(row)
+		if err != nil {
+			return []Bytes32{}, err
+		}
+		copy(data[i*GetDataCount():(i+1)*GetDataCount()], rowData)
+	}
+	return data, nil
+
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -178,6 +210,13 @@ func GetSampleCount() int {
 		panic("trusted setup isn't loaded")
 	}
 	return int(settings.sample_count)
+}
+
+func GetBlobCount() int {
+	if !loaded {
+		panic("trusted setup isn't loaded")
+	}
+	return int(settings.blob_count)
 }
 
 func GetNullSample() Sample {
@@ -423,7 +462,7 @@ func VerifyBlobKZGProofBatch(blobs []Blob, commitmentsBytes, proofsBytes []Bytes
 GetSamplesAndProofs is the binding for:
 
 	C_KZG_RET get_samples_and_proofs(
-	    Bytes32 *samples,
+	    Bytes32 *data,
 	    KZGProof *proofs,
 	    const Blob *blob,
 	    const KZGSettings *s);
@@ -432,21 +471,40 @@ func GetSamplesAndProofs(blob Blob) ([]Sample, []KZGProof, error) {
 	if !loaded {
 		panic("trusted setup isn't loaded")
 	}
-	flattenedSamples := make([]Bytes32, GetDataCount())
+	data := make([]Bytes32, GetDataCount())
 	proofs := make([]KZGProof, GetSampleCount())
 	err := makeErrorFromRet(C.get_samples_and_proofs(
-		*(**C.Bytes32)(unsafe.Pointer(&flattenedSamples)),
+		*(**C.Bytes32)(unsafe.Pointer(&data)),
 		*(**C.KZGProof)(unsafe.Pointer(&proofs)),
 		(*C.Blob)(unsafe.Pointer(&blob)),
 		&settings))
 	if err != nil {
 		return []Sample{}, []KZGProof{}, err
 	}
-	samples, err := chunk(flattenedSamples)
+	samples, err := chunk(data)
 	if err != nil {
 		return []Sample{}, []KZGProof{}, err
 	}
 	return samples, proofs, nil
+}
+
+func Get2dSamples(blobs []Blob) ([][]Sample, error) {
+	if !loaded {
+		panic("trusted setup isn't loaded")
+	}
+	if len(blobs) != GetBlobCount() {
+		return [][]Sample{}, ErrInvalidBlobCount
+	}
+	data := make([]Bytes32, 2*GetBlobCount()*GetDataCount())
+	err := makeErrorFromRet(C.get_2d_samples(
+		*(**C.Bytes32)(unsafe.Pointer(&data)),
+		*(**C.Blob)(unsafe.Pointer(&blobs)),
+		&settings))
+	samples := make([][]Sample, 2*GetBlobCount())
+	for i := range samples {
+		samples[i], err = chunk(data[i*GetDataCount() : (i+1)*GetDataCount()])
+	}
+	return samples, err
 }
 
 /*
@@ -454,7 +512,7 @@ SamplesToBlob is the binding for:
 
 	C_KZG_RET samples_to_blob(
 	    Blob *blob,
-	    const Bytes32 *samples,
+	    const Bytes32 *data,
 	    const KZGSettings *s);
 */
 func SamplesToBlob(samples []Sample) (Blob, error) {
@@ -462,13 +520,13 @@ func SamplesToBlob(samples []Sample) (Blob, error) {
 		panic("trusted setup isn't loaded")
 	}
 	blob := Blob{}
-	flattenedSamples, err := flatten(samples)
+	data, err := flatten(samples)
 	if err != nil {
 		return blob, err
 	}
 	ret := C.samples_to_blob(
 		(*C.Blob)(unsafe.Pointer(&blob)),
-		*(**C.Bytes32)(unsafe.Pointer(&flattenedSamples)),
+		*(**C.Bytes32)(unsafe.Pointer(&data)),
 		&settings)
 	return blob, makeErrorFromRet(ret)
 }
@@ -478,28 +536,59 @@ RecoverSamples is the binding for:
 
 	C_KZG_RET recover_samples(
 	    Bytes32 *recovered,
-	    const Bytes32 *samples,
+	    const Bytes32 *data,
 	    const KZGSettings *s);
 */
 func RecoverSamples(samples []Sample) ([]Sample, error) {
 	if !loaded {
 		panic("trusted setup isn't loaded")
 	}
-	flattenedRecovered := make([]Bytes32, GetDataCount())
-	flattenedSamples, err := flatten(samples)
+	partialData, err := flatten(samples)
 	if err != nil {
 		return []Sample{}, err
 	}
+	recoveredData := make([]Bytes32, GetDataCount())
 	err = makeErrorFromRet(C.recover_samples(
-		*(**C.Bytes32)(unsafe.Pointer(&flattenedRecovered)),
-		*(**C.Bytes32)(unsafe.Pointer(&flattenedSamples)),
+		*(**C.Bytes32)(unsafe.Pointer(&recoveredData)),
+		*(**C.Bytes32)(unsafe.Pointer(&partialData)),
 		&settings))
 	if err != nil {
 		return []Sample{}, err
 	}
-	recovered, err := chunk(flattenedSamples)
+	recovered, err := chunk(recoveredData)
 	if err != nil {
 		return []Sample{}, err
+	}
+	return recovered, nil
+}
+
+/*
+Recover2dSamples is the binding for:
+
+	C_KZG_RET recover_samples(
+	    Bytes32 *recovered,
+	    const Bytes32 *data,
+	    const KZGSettings *s);
+*/
+func Recover2dSamples(samples [][]Sample) ([][]Sample, error) {
+	if !loaded {
+		panic("trusted setup isn't loaded")
+	}
+	partialData, err := flatten2d(samples)
+	if err != nil {
+		return [][]Sample{}, err
+	}
+	recoveredData := make([]Bytes32, GetSampleCount()*GetDataCount())
+	err = makeErrorFromRet(C.recover_2d_samples(
+		*(**C.Bytes32)(unsafe.Pointer(&recoveredData)),
+		*(**C.Bytes32)(unsafe.Pointer(&partialData)),
+		&settings))
+	if err != nil {
+		return [][]Sample{}, err
+	}
+	recovered, err := chunk2d(recoveredData)
+	if err != nil {
+		return [][]Sample{}, err
 	}
 	return recovered, nil
 }
@@ -511,7 +600,7 @@ VerifySampleProof is the binding for:
 	    bool *ok,
 	    const Bytes48 *commitment_bytes,
 	    const Bytes48 *proof_bytes,
-	    const Bytes32 *sample,
+	    const Bytes32 *data,
 	    size_t index,
 	    const KZGSettings *s);
 */
