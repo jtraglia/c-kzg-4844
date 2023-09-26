@@ -600,22 +600,6 @@ func TestRecoverNoMissing(t *testing.T) {
 // Benchmarks
 ///////////////////////////////////////////////////////////////////////////////
 
-/*
-func Benchmark2dRecover(b *testing.B) {
-	length := GetBlobCount()
-	blobs := make([]Blob, length)
-	samples, err := Get2dSamples(blobs)
-	require.NoError(b, err)
-	partialSamples := getPartialSamples(samples)
-
-	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
-		_, err := Recover2dSamples(partialSamples)
-		require.Nil(b, err)
-	}
-}
-*/
-
 func Benchmark(b *testing.B) {
 	length := GetBlobCount()
 	blobs := make([]Blob, length)
@@ -624,7 +608,6 @@ func Benchmark(b *testing.B) {
 	fields := make([]Bytes32, length)
 	samples := make([][]Sample, length)
 	sampleProofs := make([][]KZGProof, length)
-	partialSamples := make([][]Sample, length)
 	samples2d := make([][][]Sample, length)
 	partialSamples2d := make([][][]Sample, length)
 
@@ -648,7 +631,6 @@ func Benchmark(b *testing.B) {
 			sampleProofs[i][j] = KZGProof(randProof)
 			samples[i][j] = randSample
 		}
-		partialSamples[i] = deleteSamples(samples[i], 2)
 		samples2d[i] = make([][]Sample, GetSampleCount())
 		for j := 0; j < GetSampleCount(); j++ {
 			samples2d[i][j] = make([]Sample, GetSampleCount())
