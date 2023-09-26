@@ -465,62 +465,6 @@ func TestSampleProof(t *testing.T) {
 	}
 }
 
-func Test2d(t *testing.T) {
-	/* Generate some random blobs */
-	blobs := make([]Blob, GetBlobCount())
-	for i := range blobs {
-		blobs[i] = getRandBlob(int64(i))
-	}
-
-	/* Get a 2d array of samples for the blobs */
-	samples, err := Get2dSamples(blobs[:])
-	require.NoError(t, err)
-
-	/* Copy samples so we mark some as missing */
-	partialSamples := make([][]Sample, len(samples))
-	for i, row := range samples {
-		partialSamples[i] = make([]Sample, len(row))
-		copy(partialSamples[i], samples[i])
-	}
-
-	/* Mark 25% of them as missing */
-	for i, row := range samples {
-		for j := range row {
-			if i%2 == 0 && j%2 == 0 {
-				partialSamples[i][j] = GetNullSample()
-			}
-		}
-	}
-
-	/* Recover all of rows */
-	for i := range partialSamples {
-		row := getRow(samples, i)
-		partialRow := getRow(partialSamples, i)
-		recovered, err := RecoverSamples(partialRow)
-		require.NoError(t, err)
-
-		for j, sample := range row {
-			for k := range sample {
-				require.Equal(t, row[j][k], recovered[j][k])
-			}
-		}
-	}
-
-	/* Recover all of columns */
-	for i := range partialSamples[0] {
-		column := getColumn(samples, i)
-		partialColumn := getColumn(partialSamples, i)
-		recovered, err := RecoverSamples(partialColumn)
-		require.NoError(t, err)
-
-		for j, sample := range column {
-			for k := range sample {
-				require.Equal(t, column[j][k], recovered[j][k])
-			}
-		}
-	}
-}
-
 func Test2dRecover(t *testing.T) {
 	/* Generate some random blobs */
 	blobs := make([]Blob, GetBlobCount())
