@@ -3469,7 +3469,7 @@ C_KZG_RET recover_2d_samples(
 
                 /* Mark this row/col as incomplete */
                 complete_rows[i] = false;
-                complete_cols[j] = false;
+                complete_cols[j/s->sample_size] = false;
             } else {
                 /* Convert the data to fr-form */
                 ret = bytes_to_bls_field(&recovered_fr[i][j], &data[index]);
