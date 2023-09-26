@@ -61,6 +61,44 @@ func deleteSamples(samples []Sample, i int) []Sample {
 	return partialSamples
 }
 
+func getPartialSamples(samples [][]Sample) [][]Sample {
+	type Pair[T, U any] struct {
+		First  T
+		Second U
+	}
+
+	partialSamples := make([][]Sample, GetSampleCount())
+	indices := make([]Pair[int, int], GetSampleCount()*GetSampleCount())
+	for i := 0; i < 2*GetBlobCount(); i++ {
+		partialSamples[i] = make([]Sample, GetSampleCount())
+		for j := 0; j < GetSampleCount(); j++ {
+			indices[i*GetSampleCount()+j] = Pair[int, int]{i, j}
+			partialSamples[i][j] = samples[i][j]
+		}
+	}
+
+	/* Mark the first 25% of shuffled indices as missing */
+	rand.Shuffle(len(indices), func(i, j int) { indices[i], indices[j] = indices[j], indices[i] })
+	count := len(indices) / 4
+	for _, index := range indices[:count] {
+		partialSamples[index.First][index.Second] = GetNullSample()
+	}
+
+	return partialSamples
+}
+
+func getRow(samples [][]Sample, row int) []Sample {
+	return samples[row]
+}
+
+func getColumn(samples [][]Sample, column int) []Sample {
+	result := make([]Sample, len(samples[0]))
+	for i, row := range samples {
+		result[i] = row[column]
+	}
+	return result
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Reference Tests
 ///////////////////////////////////////////////////////////////////////////////
@@ -415,6 +453,128 @@ func TestSampleProof(t *testing.T) {
 	}
 }
 
+func Test2d(t *testing.T) {
+	/* Generate some random blobs */
+	blobs := make([]Blob, GetBlobCount())
+	for i := range blobs {
+		blobs[i] = getRandBlob(int64(i))
+	}
+
+	/* Get a 2d array of samples for the blobs */
+	samples, err := Get2dSamples(blobs[:])
+	require.NoError(t, err)
+
+	/* Copy samples so we mark some as missing */
+	partialSamples := make([][]Sample, len(samples))
+	for i, row := range samples {
+		partialSamples[i] = make([]Sample, len(row))
+		copy(partialSamples[i], samples[i])
+	}
+
+	/* Mark 25% of them as missing */
+	for i, row := range samples {
+		for j := range row {
+			if i%2 == 0 && j%2 == 0 {
+				partialSamples[i][j] = GetNullSample()
+			}
+		}
+	}
+
+	/* Recover all of rows */
+	for i := range partialSamples {
+		row := getRow(samples, i)
+		partialRow := getRow(partialSamples, i)
+		recovered, err := RecoverSamples(partialRow)
+		require.NoError(t, err)
+
+		for j, sample := range row {
+			for k := range sample {
+				require.Equal(t, row[j][k], recovered[j][k])
+			}
+		}
+	}
+
+	/* Recover all of columns */
+	for i := range partialSamples[0] {
+		column := getColumn(samples, i)
+		partialColumn := getColumn(partialSamples, i)
+		recovered, err := RecoverSamples(partialColumn)
+		require.NoError(t, err)
+
+		for j, sample := range column {
+			for k := range sample {
+				require.Equal(t, column[j][k], recovered[j][k])
+			}
+		}
+	}
+}
+
+func Test2dRecover(t *testing.T) {
+	/* Generate some random blobs */
+	blobs := make([]Blob, GetBlobCount())
+	for i := range blobs {
+		blobs[i] = getRandBlob(int64(i))
+	}
+
+	/* Get a 2d array of samples for the blobs */
+	samples, err := Get2dSamples(blobs[:])
+	require.NoError(t, err)
+
+	/* Mark 25% of them as missing */
+	partialSamples := getPartialSamples(samples)
+
+	/* Recover data */
+	recovered, err := Recover2dSamples(partialSamples)
+	require.NoError(t, err)
+
+	/* Ensure recovered matches original */
+	require.Equal(t, len(samples), len(recovered))
+	for i := range samples {
+		require.Equal(t, len(samples[i]), len(recovered[i]))
+		for j := range samples[i] {
+			require.Equal(t, samples[i][j], recovered[i][j])
+		}
+	}
+}
+
+func Test2dRecoverFirstRowIsMissing(t *testing.T) {
+	/* Generate some random blobs */
+	blobs := make([]Blob, GetBlobCount())
+	for i := range blobs {
+		blobs[i] = getRandBlob(int64(i))
+	}
+
+	/* Get a 2d array of samples for the blobs */
+	samples, err := Get2dSamples(blobs[:])
+	require.NoError(t, err)
+
+	/* Copy samples so we mark some as missing */
+	partialSamples := make([][]Sample, len(samples))
+	for i, row := range samples {
+		partialSamples[i] = make([]Sample, len(row))
+		copy(partialSamples[i], samples[i])
+	}
+
+	/* Mark the first 75% samples in the first row as null */
+	l := (len(partialSamples[0]) / 4) * 3
+	for j := range partialSamples[0][:l] {
+		partialSamples[0][j] = GetNullSample()
+	}
+
+	/* Recover data */
+	recovered, err := Recover2dSamples(partialSamples)
+	require.NoError(t, err)
+
+	/* Ensure recovered matches original */
+	require.Equal(t, len(samples), len(recovered))
+	for i := range samples {
+		require.Equal(t, len(samples[i]), len(recovered[i]))
+		for j := range samples[i] {
+			require.Equal(t, samples[i][j], recovered[i][j])
+		}
+	}
+}
+
 func TestRecoverNoMissing(t *testing.T) {
 	blob := getRandBlob(0)
 	samples, _, err := GetSamplesAndProofs(blob)
@@ -428,15 +588,29 @@ func TestRecoverNoMissing(t *testing.T) {
 // Benchmarks
 ///////////////////////////////////////////////////////////////////////////////
 
+func Benchmark2dRecover(b *testing.B) {
+	length := GetBlobCount()
+	blobs := make([]Blob, length)
+	samples, err := Get2dSamples(blobs)
+	require.NoError(b, err)
+	partialSamples := getPartialSamples(samples)
+
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		_, err := Recover2dSamples(partialSamples)
+		require.Nil(b, err)
+	}
+}
+
 func Benchmark(b *testing.B) {
-	const length = 64
-	blobs := [length]Blob{}
-	commitments := [length]Bytes48{}
-	proofs := [length]Bytes48{}
-	fields := [length]Bytes32{}
-	samples := [length][]Sample{}
-	sampleProofs := [length][]KZGProof{}
-	partialSamples := [length][]Sample{}
+	length := GetBlobCount()
+	blobs := make([]Blob, length)
+	commitments := make([]Bytes48, length)
+	proofs := make([]Bytes48, length)
+	fields := make([]Bytes32, length)
+	samples := make([][]Sample, length)
+	sampleProofs := make([][]KZGProof, length)
+	partialSamples := make([][]Sample, length)
 
 	for i := 0; i < length; i++ {
 		blob := getRandBlob(int64(i))
@@ -495,6 +669,13 @@ func Benchmark(b *testing.B) {
 	b.Run("GetSamplesAndProofs", func(b *testing.B) {
 		for n := 0; n < b.N; n++ {
 			_, _, err := GetSamplesAndProofs(blobs[0])
+			require.Nil(b, err)
+		}
+	})
+
+	b.Run("Get2dSamples", func(b *testing.B) {
+		for n := 0; n < b.N; n++ {
+			_, err := Get2dSamples(blobs)
 			require.Nil(b, err)
 		}
 	})
