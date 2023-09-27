@@ -2498,12 +2498,14 @@ static const fr_t SCALE_FACTOR = {
     0x0000000afffffff5L,
     0x66d9f3df00120c0bL,
     0xcc83b7a7960bb7c5L,
-    0x04c9cf6d363b9de5L};
+    0x04c9cf6d363b9de5L
+};
 static const fr_t INV_SCALE_FACTOR = {
     0x0000000066666666L,
     0x11b424cb999a419aL,
     0x51e8dcc995bf4331L,
-    0x04d4237855c10116L};
+    0x04d4237855c10116L
+};
 
 /**
  * Scale a polynomial in place.
@@ -3192,6 +3194,56 @@ out:
     return ret;
 }
 
+C_KZG_RET get_proofs(KZGProof *proofs, const Blob *blob, const KZGSettings *s) {
+    C_KZG_RET ret;
+    fr_t *poly_monomial = NULL;
+    fr_t *poly_lagrange = NULL;
+    g1_t *proofs_g1 = NULL;
+
+    /* Allocate space fr-form arrays */
+    ret = new_fr_array(&poly_monomial, s->max_width);
+    if (ret != C_KZG_OK) goto out;
+    ret = new_fr_array(&poly_lagrange, s->max_width);
+    if (ret != C_KZG_OK) goto out;
+    ret = new_g1_array(&proofs_g1, s->sample_count);
+    if (ret != C_KZG_OK) goto out;
+
+    /* Initialize all of the polynomial fields to zero */
+    memset(poly_monomial, 0, sizeof(fr_t) * s->max_width);
+    memset(poly_lagrange, 0, sizeof(fr_t) * s->max_width);
+
+    /*
+     * Convert the blob to a polynomial. Note that only the first 4096 fields
+     * of the polynomial will be set. The upper 4096 fields will remain zero.
+     * This is required because the polynomial will be evaluated with 8192
+     * roots of unity.
+     */
+    ret = blob_to_polynomial((Polynomial *)poly_lagrange, blob);
+    if (ret != C_KZG_OK) goto out;
+
+    ret = poly_lagrange_to_monomial(
+        poly_monomial, poly_lagrange, FIELD_ELEMENTS_PER_BLOB, s
+    );
+    if (ret != C_KZG_OK) goto out;
+
+    poly_t p = {NULL, 0};
+    p.length = s->max_width / 2;
+    p.coeffs = poly_monomial;
+    ret = da_using_fk20_multi(proofs_g1, &p, s);
+    if (ret != C_KZG_OK) goto out;
+
+    /* Convert all of the proofs to byte-form */
+    for (size_t i = 0; i < s->sample_count; i++) {
+        bytes_from_g1(&proofs[i], &proofs_g1[i]);
+    }
+
+out:
+    c_kzg_free(poly_monomial);
+    c_kzg_free(poly_lagrange);
+    c_kzg_free(proofs_g1);
+    return ret;
+}
+
 /**
  * Given BLOB_COUNT blobs, generate a 2D array of samples and proofs.
  *
@@ -3202,6 +3254,8 @@ out:
  *
  * @remark Where BLOB_COUNT is FIELD_ELEMENTS_PER_BLOB / SAMPLE_SIZE.
  * @remark Where DATA_COUNT is SAMPLES_COUNT^2 * SAMPLE_LEN.
+ * @remark If `proofs` is NULL, they won't be computed.
+ * @remark Proof computation is REALLY slow.
  */
 C_KZG_RET get_2d_samples_and_proofs(
     Bytes32 *data, KZGProof *proofs, const Blob *blobs, const KZGSettings *s
@@ -3326,37 +3380,39 @@ C_KZG_RET get_2d_samples_and_proofs(
         }
     }
 
-    /* Convert the extended polys to monomial form */
-    for (size_t i = s->blob_count; i < n; i++) {
-        /* Initialize all of the polynomial fields to zero */
-        memset(monomial_polys[i], 0, sizeof(fr_t) * s->max_width);
-        memset(lagrange_polys[i], 0, sizeof(fr_t) * s->max_width);
+    if (proofs != NULL) {
+        /* Convert the extended polys to monomial form */
+        for (size_t i = s->blob_count; i < n; i++) {
+            /* Initialize all of the polynomial fields to zero */
+            memset(monomial_polys[i], 0, sizeof(fr_t) * s->max_width);
+            memset(lagrange_polys[i], 0, sizeof(fr_t) * s->max_width);
 
-        Blob blob;
-        ret = samples_to_blob(&blob, &data[i * s->max_width], s);
-        if (ret != C_KZG_OK) goto out;
+            Blob blob;
+            ret = samples_to_blob(&blob, &data[i * s->max_width], s);
+            if (ret != C_KZG_OK) goto out;
 
-        /* Convert blob to lagrange & monomial forms */
-        ret = blob_to_polynomial((Polynomial *)lagrange_polys[i], &blob);
-        if (ret != C_KZG_OK) goto out;
-        ret = poly_lagrange_to_monomial(
-            monomial_polys[i], lagrange_polys[i], FIELD_ELEMENTS_PER_BLOB, s
-        );
-        if (ret != C_KZG_OK) goto out;
-    }
+            /* Convert blob to lagrange & monomial forms */
+            ret = blob_to_polynomial((Polynomial *)lagrange_polys[i], &blob);
+            if (ret != C_KZG_OK) goto out;
+            ret = poly_lagrange_to_monomial(
+                monomial_polys[i], lagrange_polys[i], FIELD_ELEMENTS_PER_BLOB, s
+            );
+            if (ret != C_KZG_OK) goto out;
+        }
 
-    /* Compute proofs for each row */
-    for (size_t i = 0; i < n; i++) {
-        poly_t p = {NULL, 0};
-        p.length = s->max_width / 2;
-        p.coeffs = monomial_polys[i];
-        ret = da_using_fk20_multi(proofs_g1, &p, s);
-        if (ret != C_KZG_OK) goto out;
+        /* Compute proofs for each row */
+        for (size_t i = 0; i < n; i++) {
+            poly_t p = {NULL, 0};
+            p.length = s->max_width / 2;
+            p.coeffs = monomial_polys[i];
+            ret = da_using_fk20_multi(proofs_g1, &p, s);
+            if (ret != C_KZG_OK) goto out;
 
-        /* Convert all of the proofs to byte-form */
-        for (size_t j = 0; j < s->sample_count; j++) {
-            size_t index = i * n + j;
-            bytes_from_g1(&proofs[index], &proofs_g1[j]);
+            /* Convert all of the proofs to byte-form */
+            for (size_t j = 0; j < s->sample_count; j++) {
+                size_t index = i * n + j;
+                bytes_from_g1(&proofs[index], &proofs_g1[j]);
+            }
         }
     }
 
@@ -3506,7 +3562,7 @@ C_KZG_RET recover_2d_samples(
 
                 /* Mark this row/col as incomplete */
                 complete_rows[i] = false;
-                complete_cols[j/s->sample_size] = false;
+                complete_cols[j / s->sample_size] = false;
             } else {
                 /* Convert the data to fr-form */
                 ret = bytes_to_bls_field(&recovered_fr[i][j], &data[index]);

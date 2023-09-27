@@ -237,11 +237,21 @@ C_KZG_RET get_samples_and_proofs(
     Bytes32 *data, KZGProof *proofs, const Blob *blob, const KZGSettings *s
 );
 
+C_KZG_RET get_proofs(KZGProof *proofs, const Blob *blob, const KZGSettings *s);
+
+C_KZG_RET get_2d_samples_and_proofs(
+    Bytes32 *data, KZGProof *proofs, const Blob *blobs, const KZGSettings *s
+);
+
 C_KZG_RET samples_to_blob(
     Blob *blob, const Bytes32 *data, const KZGSettings *s
 );
 
 C_KZG_RET recover_samples(
+    Bytes32 *recovered, const Bytes32 *data, const KZGSettings *s
+);
+
+C_KZG_RET recover_2d_samples(
     Bytes32 *recovered, const Bytes32 *data, const KZGSettings *s
 );
 

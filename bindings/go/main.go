@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"unsafe"
 
 	// So its functions are available during compilation.
@@ -488,6 +489,35 @@ func GetSamplesAndProofs(blob Blob) ([]Sample, []KZGProof, error) {
 	return samples, proofs, nil
 }
 
+/*
+GetProofs is the binding for:
+
+	C_KZG_RET get_proofs(
+	    KZGProof *proofs,
+	    const Blob *blob,
+	    const KZGSettings *s);
+*/
+func GetProofs(blob Blob) ([]KZGProof, error) {
+	if !loaded {
+		panic("trusted setup isn't loaded")
+	}
+	proofs := make([]KZGProof, GetSampleCount())
+	err := makeErrorFromRet(C.get_proofs(
+		*(**C.KZGProof)(unsafe.Pointer(&proofs)),
+		(*C.Blob)(unsafe.Pointer(&blob)),
+		&settings))
+	return proofs, err
+}
+
+/*
+Get2dSamplesAndProofs is the binding for:
+
+	C_KZG_RET get_2d_samples_and_proofs(
+	    Bytes32 *data,
+	    KZGProof *proofs,
+	    const Blob *blob,
+	    const KZGSettings *s);
+*/
 func Get2dSamplesAndProofs(blobs []Blob) ([][]Sample, [][]KZGProof, error) {
 	if !loaded {
 		panic("trusted setup isn't loaded")
@@ -496,23 +526,29 @@ func Get2dSamplesAndProofs(blobs []Blob) ([][]Sample, [][]KZGProof, error) {
 		return [][]Sample{}, [][]KZGProof{}, ErrInvalidBlobCount
 	}
 	data := make([]Bytes32, GetSampleCount()*GetDataCount())
-	flatProofs := make([]KZGProof, GetSampleCount()*GetSampleCount())
 	err := makeErrorFromRet(C.get_2d_samples_and_proofs(
 		*(**C.Bytes32)(unsafe.Pointer(&data)),
-		*(**C.KZGProof)(unsafe.Pointer(&flatProofs)),
+		(*C.KZGProof)(nil),
 		*(**C.Blob)(unsafe.Pointer(&blobs)),
 		&settings))
 	if err != nil {
 		return [][]Sample{}, [][]KZGProof{}, ErrInvalidBlobCount
 	}
 	samples, err := chunk2d(data)
+
+	// Compute proofs in parallel.
 	proofs := make([][]KZGProof, GetSampleCount())
-	for i := range proofs {
-		proofs[i] = make([]KZGProof, GetSampleCount())
-		for j := range proofs[i] {
-			proofs[i][j] = flatProofs[i*GetSampleCount()+j]
-		}
+	var wg sync.WaitGroup
+	for i := range samples {
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			blob, _ := SamplesToBlob(samples[index])
+			proofs[index], err = GetProofs(blob)
+		}(i)
 	}
+	wg.Wait()
+
 	return samples, proofs, nil
 }
 
@@ -574,7 +610,7 @@ func RecoverSamples(samples []Sample) ([]Sample, error) {
 /*
 Recover2dSamples is the binding for:
 
-	C_KZG_RET recover_samples(
+	C_KZG_RET recover_2d_samples(
 	    Bytes32 *recovered,
 	    const Bytes32 *data,
 	    const KZGSettings *s);

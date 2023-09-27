@@ -465,6 +465,18 @@ func TestSampleProof(t *testing.T) {
 	}
 }
 
+func TestGet2dSamplesAndProofs(t *testing.T) {
+	/* Generate some random blobs */
+	blobs := make([]Blob, GetBlobCount())
+	for i := range blobs {
+		blobs[i] = getRandBlob(int64(i))
+	}
+
+	/* Get a 2d array of samples for the blobs */
+	_, _, err := Get2dSamplesAndProofs(blobs[:])
+	require.NoError(t, err)
+}
+
 func Test2dRecover(t *testing.T) {
 	/* Generate some random blobs */
 	blobs := make([]Blob, GetBlobCount())
