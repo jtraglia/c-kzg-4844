@@ -495,12 +495,12 @@ func Get2dSamples(blobs []Blob) ([][]Sample, error) {
 	if len(blobs) != GetBlobCount() {
 		return [][]Sample{}, ErrInvalidBlobCount
 	}
-	data := make([]Bytes32, 2*GetBlobCount()*GetDataCount())
+	data := make([]Bytes32, GetSampleCount()*GetDataCount())
 	err := makeErrorFromRet(C.get_2d_samples(
 		*(**C.Bytes32)(unsafe.Pointer(&data)),
 		*(**C.Blob)(unsafe.Pointer(&blobs)),
 		&settings))
-	samples := make([][]Sample, 2*GetBlobCount())
+	samples := make([][]Sample, GetSampleCount())
 	for i := range samples {
 		samples[i], err = chunk(data[i*GetDataCount() : (i+1)*GetDataCount()])
 	}
