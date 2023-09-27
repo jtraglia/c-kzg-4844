@@ -500,11 +500,10 @@ func Get2dSamples(blobs []Blob) ([][]Sample, error) {
 		*(**C.Bytes32)(unsafe.Pointer(&data)),
 		*(**C.Blob)(unsafe.Pointer(&blobs)),
 		&settings))
-	samples := make([][]Sample, GetSampleCount())
-	for i := range samples {
-		samples[i], err = chunk(data[i*GetDataCount() : (i+1)*GetDataCount()])
+	if err != nil {
+		return [][]Sample{}, err
 	}
-	return samples, err
+	return chunk2d(data)
 }
 
 /*
@@ -586,11 +585,7 @@ func Recover2dSamples(samples [][]Sample) ([][]Sample, error) {
 	if err != nil {
 		return [][]Sample{}, err
 	}
-	recovered, err := chunk2d(recoveredData)
-	if err != nil {
-		return [][]Sample{}, err
-	}
-	return recovered, nil
+	return chunk2d(recoveredData)
 }
 
 /*
