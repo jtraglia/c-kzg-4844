@@ -490,26 +490,6 @@ func GetSamplesAndProofs(blob Blob) ([]Sample, []KZGProof, error) {
 }
 
 /*
-GetProofs is the binding for:
-
-	C_KZG_RET get_proofs(
-	    KZGProof *proofs,
-	    const Blob *blob,
-	    const KZGSettings *s);
-*/
-func GetProofs(blob Blob) ([]KZGProof, error) {
-	if !loaded {
-		panic("trusted setup isn't loaded")
-	}
-	proofs := make([]KZGProof, GetSampleCount())
-	err := makeErrorFromRet(C.get_proofs(
-		*(**C.KZGProof)(unsafe.Pointer(&proofs)),
-		(*C.Blob)(unsafe.Pointer(&blob)),
-		&settings))
-	return proofs, err
-}
-
-/*
 Get2dSamplesAndProofs is the binding for:
 
 	C_KZG_RET get_2d_samples_and_proofs(
@@ -532,9 +512,12 @@ func Get2dSamplesAndProofs(blobs []Blob) ([][]Sample, [][]KZGProof, error) {
 		*(**C.Blob)(unsafe.Pointer(&blobs)),
 		&settings))
 	if err != nil {
-		return [][]Sample{}, [][]KZGProof{}, ErrInvalidBlobCount
+		return [][]Sample{}, [][]KZGProof{}, err
 	}
 	samples, err := chunk2d(data)
+	if err != nil {
+		return [][]Sample{}, [][]KZGProof{}, err
+	}
 
 	// Compute proofs in parallel.
 	proofs := make([][]KZGProof, GetSampleCount())
@@ -544,7 +527,16 @@ func Get2dSamplesAndProofs(blobs []Blob) ([][]Sample, [][]KZGProof, error) {
 		go func(index int) {
 			defer wg.Done()
 			blob, _ := SamplesToBlob(samples[index])
-			proofs[index], err = GetProofs(blob)
+			proofs[index] = make([]KZGProof, GetSampleCount())
+			err := makeErrorFromRet(C.get_samples_and_proofs(
+				(*C.Bytes32)(nil),
+				*(**C.KZGProof)(unsafe.Pointer(&proofs[index])),
+				(*C.Blob)(unsafe.Pointer(&blob)),
+				&settings))
+			// TODO: Handle error properly.
+			if err != nil {
+				panic("unexpected error")
+			}
 		}(i)
 	}
 	wg.Wait()

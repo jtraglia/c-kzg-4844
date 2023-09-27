@@ -3124,6 +3124,8 @@ C_KZG_RET samples_to_blob(
  * @remark Use samples_to_blob to convert the data points into a blob.
  * @remark Up to half of these samples may be lost.
  * @remark Use recover_samples to recover missing samples.
+ * @remark If `data` is NULL, samples won't be computed.
+ * @remark If `proofs` is NULL, proofs won't be computed.
  */
 C_KZG_RET get_samples_and_proofs(
     Bytes32 *data, KZGProof *proofs, const Blob *blob, const KZGSettings *s
@@ -3162,84 +3164,38 @@ C_KZG_RET get_samples_and_proofs(
     );
     if (ret != C_KZG_OK) goto out;
 
-    poly_t p = {NULL, 0};
-    p.length = s->max_width / 2;
-    p.coeffs = poly_monomial;
-    ret = da_using_fk20_multi(proofs_g1, &p, s);
-    if (ret != C_KZG_OK) goto out;
+    if (data != NULL) {
+        /* Get the data points via forward transformation */
+        ret = fft_fr(data_fr, poly_monomial, s->max_width, s);
+        if (ret != C_KZG_OK) goto out;
 
-    /* Get the data points via forward transformation */
-    ret = fft_fr(data_fr, poly_monomial, s->max_width, s);
-    if (ret != C_KZG_OK) goto out;
+        /* Convert all of the samples to byte-form */
+        for (size_t i = 0; i < s->max_width; i++) {
+            bytes_from_bls_field(&data[i], &data_fr[i]);
+        }
 
-    /* Convert all of the samples to byte-form */
-    for (size_t i = 0; i < s->max_width; i++) {
-        bytes_from_bls_field(&data[i], &data_fr[i]);
+        /* Bit-reverse the data points */
+        ret = bit_reversal_permutation(data, sizeof(data[0]), s->max_width);
+        if (ret != C_KZG_OK) goto out;
     }
 
-    /* Bit-reverse the data points */
-    ret = bit_reversal_permutation(data, sizeof(data[0]), s->max_width);
-    if (ret != C_KZG_OK) goto out;
+    if (proofs != NULL) {
+        poly_t p = {NULL, 0};
+        p.length = s->max_width / 2;
+        p.coeffs = poly_monomial;
+        ret = da_using_fk20_multi(proofs_g1, &p, s);
+        if (ret != C_KZG_OK) goto out;
 
-    /* Convert all of the proofs to byte-form */
-    for (size_t i = 0; i < s->sample_count; i++) {
-        bytes_from_g1(&proofs[i], &proofs_g1[i]);
+        /* Convert all of the proofs to byte-form */
+        for (size_t i = 0; i < s->sample_count; i++) {
+            bytes_from_g1(&proofs[i], &proofs_g1[i]);
+        }
     }
 
 out:
     c_kzg_free(poly_monomial);
     c_kzg_free(poly_lagrange);
     c_kzg_free(data_fr);
-    c_kzg_free(proofs_g1);
-    return ret;
-}
-
-C_KZG_RET get_proofs(KZGProof *proofs, const Blob *blob, const KZGSettings *s) {
-    C_KZG_RET ret;
-    fr_t *poly_monomial = NULL;
-    fr_t *poly_lagrange = NULL;
-    g1_t *proofs_g1 = NULL;
-
-    /* Allocate space fr-form arrays */
-    ret = new_fr_array(&poly_monomial, s->max_width);
-    if (ret != C_KZG_OK) goto out;
-    ret = new_fr_array(&poly_lagrange, s->max_width);
-    if (ret != C_KZG_OK) goto out;
-    ret = new_g1_array(&proofs_g1, s->sample_count);
-    if (ret != C_KZG_OK) goto out;
-
-    /* Initialize all of the polynomial fields to zero */
-    memset(poly_monomial, 0, sizeof(fr_t) * s->max_width);
-    memset(poly_lagrange, 0, sizeof(fr_t) * s->max_width);
-
-    /*
-     * Convert the blob to a polynomial. Note that only the first 4096 fields
-     * of the polynomial will be set. The upper 4096 fields will remain zero.
-     * This is required because the polynomial will be evaluated with 8192
-     * roots of unity.
-     */
-    ret = blob_to_polynomial((Polynomial *)poly_lagrange, blob);
-    if (ret != C_KZG_OK) goto out;
-
-    ret = poly_lagrange_to_monomial(
-        poly_monomial, poly_lagrange, FIELD_ELEMENTS_PER_BLOB, s
-    );
-    if (ret != C_KZG_OK) goto out;
-
-    poly_t p = {NULL, 0};
-    p.length = s->max_width / 2;
-    p.coeffs = poly_monomial;
-    ret = da_using_fk20_multi(proofs_g1, &p, s);
-    if (ret != C_KZG_OK) goto out;
-
-    /* Convert all of the proofs to byte-form */
-    for (size_t i = 0; i < s->sample_count; i++) {
-        bytes_from_g1(&proofs[i], &proofs_g1[i]);
-    }
-
-out:
-    c_kzg_free(poly_monomial);
-    c_kzg_free(poly_lagrange);
     c_kzg_free(proofs_g1);
     return ret;
 }

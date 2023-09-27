@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -497,19 +498,25 @@ func Test2dRecover(t *testing.T) {
 
 	/* Ensure recovered matches original */
 	require.Equal(t, len(samples), len(recovered))
+	var wg sync.WaitGroup
 	for i := range samples {
-		require.Equal(t, len(samples[i]), len(recovered[i]))
-		blob, err := SamplesToBlob(samples[i])
-		require.NoError(t, err)
-		commitment, err := BlobToKZGCommitment(blob)
-		require.NoError(t, err)
-		for j := range samples[i] {
-			require.Equal(t, samples[i][j], recovered[i][j])
-			ok, err := VerifySampleProof(Bytes48(commitment), Bytes48(proofs[i][j]), samples[i][j], j)
+		wg.Add(1)
+		go func(x int) {
+			defer wg.Done()
+			require.Equal(t, len(samples[x]), len(recovered[x]))
+			blob, err := SamplesToBlob(samples[x])
 			require.NoError(t, err)
-			require.True(t, ok)
-		}
+			commitment, err := BlobToKZGCommitment(blob)
+			require.NoError(t, err)
+			for j := range samples[x] {
+				require.Equal(t, samples[x][j], recovered[x][j])
+				ok, err := VerifySampleProof(Bytes48(commitment), Bytes48(proofs[x][j]), samples[x][j], j)
+				require.NoError(t, err)
+				require.True(t, ok)
+			}
+		}(i)
 	}
+	wg.Wait()
 }
 
 func Test2dRecoverFirstRowIsMissing(t *testing.T) {
@@ -542,19 +549,25 @@ func Test2dRecoverFirstRowIsMissing(t *testing.T) {
 
 	/* Ensure recovered matches original */
 	require.Equal(t, len(samples), len(recovered))
+	var wg sync.WaitGroup
 	for i := range samples {
-		require.Equal(t, len(samples[i]), len(recovered[i]))
-		blob, err := SamplesToBlob(samples[i])
-		require.NoError(t, err)
-		commitment, err := BlobToKZGCommitment(blob)
-		require.NoError(t, err)
-		for j := range samples[i] {
-			require.Equal(t, samples[i][j], recovered[i][j])
-			ok, err := VerifySampleProof(Bytes48(commitment), Bytes48(proofs[i][j]), samples[i][j], j)
+		wg.Add(1)
+		go func(x int) {
+			defer wg.Done()
+			require.Equal(t, len(samples[x]), len(recovered[x]))
+			blob, err := SamplesToBlob(samples[x])
 			require.NoError(t, err)
-			require.True(t, ok)
-		}
+			commitment, err := BlobToKZGCommitment(blob)
+			require.NoError(t, err)
+			for j := range samples[x] {
+				require.Equal(t, samples[x][j], recovered[x][j])
+				ok, err := VerifySampleProof(Bytes48(commitment), Bytes48(proofs[x][j]), samples[x][j], j)
+				require.NoError(t, err)
+				require.True(t, ok)
+			}
+		}(i)
 	}
+	wg.Wait()
 }
 
 func TestRecoverNoMissing(t *testing.T) {
