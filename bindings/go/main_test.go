@@ -473,7 +473,7 @@ func Test2dRecover(t *testing.T) {
 	}
 
 	/* Get a 2d array of samples for the blobs */
-	samples, err := Get2dSamples(blobs[:])
+	samples, proofs, err := Get2dSamplesAndProofs(blobs[:])
 	require.NoError(t, err)
 
 	/* Mark 25% of them as missing */
@@ -487,8 +487,15 @@ func Test2dRecover(t *testing.T) {
 	require.Equal(t, len(samples), len(recovered))
 	for i := range samples {
 		require.Equal(t, len(samples[i]), len(recovered[i]))
+		blob, err := SamplesToBlob(samples[i])
+		require.NoError(t, err)
+		commitment, err := BlobToKZGCommitment(blob)
+		require.NoError(t, err)
 		for j := range samples[i] {
 			require.Equal(t, samples[i][j], recovered[i][j])
+			ok, err := VerifySampleProof(Bytes48(commitment), Bytes48(proofs[i][j]), samples[i][j], j)
+			require.NoError(t, err)
+			require.True(t, ok)
 		}
 	}
 }
@@ -501,7 +508,7 @@ func Test2dRecoverFirstRowIsMissing(t *testing.T) {
 	}
 
 	/* Get a 2d array of samples for the blobs */
-	samples, err := Get2dSamples(blobs[:])
+	samples, proofs, err := Get2dSamplesAndProofs(blobs[:])
 	require.NoError(t, err)
 
 	/* Copy samples so we mark some as missing */
@@ -525,8 +532,15 @@ func Test2dRecoverFirstRowIsMissing(t *testing.T) {
 	require.Equal(t, len(samples), len(recovered))
 	for i := range samples {
 		require.Equal(t, len(samples[i]), len(recovered[i]))
+		blob, err := SamplesToBlob(samples[i])
+		require.NoError(t, err)
+		commitment, err := BlobToKZGCommitment(blob)
+		require.NoError(t, err)
 		for j := range samples[i] {
 			require.Equal(t, samples[i][j], recovered[i][j])
+			ok, err := VerifySampleProof(Bytes48(commitment), Bytes48(proofs[i][j]), samples[i][j], j)
+			require.NoError(t, err)
+			require.True(t, ok)
 		}
 	}
 }
@@ -661,9 +675,9 @@ func Benchmark(b *testing.B) {
 		}
 	})
 
-	b.Run("Get2dSamples", func(b *testing.B) {
+	b.Run("Get2dSamplesAndProofs", func(b *testing.B) {
 		for n := 0; n < b.N; n++ {
-			_, err := Get2dSamples(blobs)
+			_, _, err := Get2dSamplesAndProofs(blobs)
 			require.Nil(b, err)
 		}
 	})

@@ -488,22 +488,32 @@ func GetSamplesAndProofs(blob Blob) ([]Sample, []KZGProof, error) {
 	return samples, proofs, nil
 }
 
-func Get2dSamples(blobs []Blob) ([][]Sample, error) {
+func Get2dSamplesAndProofs(blobs []Blob) ([][]Sample, [][]KZGProof, error) {
 	if !loaded {
 		panic("trusted setup isn't loaded")
 	}
 	if len(blobs) != GetBlobCount() {
-		return [][]Sample{}, ErrInvalidBlobCount
+		return [][]Sample{}, [][]KZGProof{}, ErrInvalidBlobCount
 	}
 	data := make([]Bytes32, GetSampleCount()*GetDataCount())
-	err := makeErrorFromRet(C.get_2d_samples(
+	flatProofs := make([]KZGProof, GetSampleCount()*GetSampleCount())
+	err := makeErrorFromRet(C.get_2d_samples_and_proofs(
 		*(**C.Bytes32)(unsafe.Pointer(&data)),
+		*(**C.KZGProof)(unsafe.Pointer(&flatProofs)),
 		*(**C.Blob)(unsafe.Pointer(&blobs)),
 		&settings))
 	if err != nil {
-		return [][]Sample{}, err
+		return [][]Sample{}, [][]KZGProof{}, ErrInvalidBlobCount
 	}
-	return chunk2d(data)
+	samples, err := chunk2d(data)
+	proofs := make([][]KZGProof, GetSampleCount())
+	for i := range proofs {
+		proofs[i] = make([]KZGProof, GetSampleCount())
+		for j := range proofs[i] {
+			proofs[i][j] = flatProofs[i*GetSampleCount()+j]
+		}
+	}
+	return samples, proofs, nil
 }
 
 /*

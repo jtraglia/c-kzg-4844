@@ -3093,6 +3093,24 @@ static void get_column(
 ///////////////////////////////////////////////////////////////////////////////
 
 /**
+ * Given DATA_COUNT data points, get a blob.
+ *
+ * @param[out]  blob    The resultant blob from the data points
+ * @param[in]   data    An array of DATA_COUNT data points
+ * @param[in]   s       The trusted setup
+ *
+ * @remark Where DATA_COUNT is SAMPLES_COUNT * SAMPLE_LEN.
+ * @remark The array of data points must be in the correct order.
+ */
+C_KZG_RET samples_to_blob(
+    Blob *blob, const Bytes32 *data, const KZGSettings *s
+) {
+    (void)s; // Will be used later.
+    memcpy(&blob->bytes, data, BYTES_PER_BLOB);
+    return C_KZG_OK;
+}
+
+/**
  * Given a blob, get DATA_COUNT data points and SAMPLE_COUNT proofs.
  *
  * @param[out]  data    An array of DATA_COUNT data points
@@ -3161,10 +3179,6 @@ C_KZG_RET get_samples_and_proofs(
     ret = bit_reversal_permutation(data, sizeof(data[0]), s->max_width);
     if (ret != C_KZG_OK) goto out;
 
-    /* Bit-reverse the proofs */
-    ret = bit_reversal_permutation(proofs, sizeof(proofs[0]), s->sample_count);
-    if (ret != C_KZG_OK) goto out;
-
     /* Convert all of the proofs to byte-form */
     for (size_t i = 0; i < s->sample_count; i++) {
         bytes_from_g1(&proofs[i], &proofs_g1[i]);
@@ -3179,17 +3193,18 @@ out:
 }
 
 /**
- * Given BLOB_COUNT blobs, generate a 2D array of samples.
+ * Given BLOB_COUNT blobs, generate a 2D array of samples and proofs.
  *
  * @param[out]  data    An array of DATA_COUNT data points
+ * @param[out]  proofs  An array of SAMPLE_COUNT**2 proofs
  * @param[in]   blobs   The blobs to generate samples for
  * @param[in]   s       The trusted setup
  *
  * @remark Where BLOB_COUNT is FIELD_ELEMENTS_PER_BLOB / SAMPLE_SIZE.
  * @remark Where DATA_COUNT is SAMPLES_COUNT^2 * SAMPLE_LEN.
  */
-C_KZG_RET get_2d_samples(
-    Bytes32 *data, const Blob *blobs, const KZGSettings *s
+C_KZG_RET get_2d_samples_and_proofs(
+    Bytes32 *data, KZGProof *proofs, const Blob *blobs, const KZGSettings *s
 ) {
     C_KZG_RET ret;
     fr_t **data_fr = NULL;
@@ -3199,6 +3214,7 @@ C_KZG_RET get_2d_samples(
     fr_t *column_poly = NULL;
     fr_t *column_poly_lagrange = NULL;
     fr_t *column_data = NULL;
+    g1_t *proofs_g1 = NULL;
 
     /* Allocate 2D arrays */
     ret = c_kzg_calloc((void **)&data_fr, n, sizeof(fr_t *));
@@ -3231,6 +3247,10 @@ C_KZG_RET get_2d_samples(
     ret = new_fr_array(&column_poly_lagrange, s->max_width);
     if (ret != C_KZG_OK) goto out;
     ret = new_fr_array(&column_data, s->max_width);
+    if (ret != C_KZG_OK) goto out;
+
+    /* Allocate array for single row of proofs */
+    ret = new_g1_array(&proofs_g1, s->sample_count);
     if (ret != C_KZG_OK) goto out;
 
     /* Extend each blob */
@@ -3306,6 +3326,40 @@ C_KZG_RET get_2d_samples(
         }
     }
 
+    /* Convert the extended polys to monomial form */
+    for (size_t i = s->blob_count; i < n; i++) {
+        /* Initialize all of the polynomial fields to zero */
+        memset(monomial_polys[i], 0, sizeof(fr_t) * s->max_width);
+        memset(lagrange_polys[i], 0, sizeof(fr_t) * s->max_width);
+
+        Blob blob;
+        ret = samples_to_blob(&blob, &data[i * s->max_width], s);
+        if (ret != C_KZG_OK) goto out;
+
+        /* Convert blob to lagrange & monomial forms */
+        ret = blob_to_polynomial((Polynomial *)lagrange_polys[i], &blob);
+        if (ret != C_KZG_OK) goto out;
+        ret = poly_lagrange_to_monomial(
+            monomial_polys[i], lagrange_polys[i], FIELD_ELEMENTS_PER_BLOB, s
+        );
+        if (ret != C_KZG_OK) goto out;
+    }
+
+    /* Compute proofs for each row */
+    for (size_t i = 0; i < n; i++) {
+        poly_t p = {NULL, 0};
+        p.length = s->max_width / 2;
+        p.coeffs = monomial_polys[i];
+        ret = da_using_fk20_multi(proofs_g1, &p, s);
+        if (ret != C_KZG_OK) goto out;
+
+        /* Convert all of the proofs to byte-form */
+        for (size_t j = 0; j < s->sample_count; j++) {
+            size_t index = i * n + j;
+            bytes_from_g1(&proofs[index], &proofs_g1[j]);
+        }
+    }
+
 out:
     for (size_t i = 0; i < n; i++) {
         c_kzg_free(monomial_polys[i]);
@@ -3319,25 +3373,8 @@ out_pre_2d:
     c_kzg_free(column_poly);
     c_kzg_free(column_poly_lagrange);
     c_kzg_free(column_data);
+    c_kzg_free(proofs_g1);
     return ret;
-}
-
-/**
- * Given DATA_COUNT data points, get a blob.
- *
- * @param[out]  blob    The resultant blob from the data points
- * @param[in]   data    An array of DATA_COUNT data points
- * @param[in]   s       The trusted setup
- *
- * @remark Where DATA_COUNT is SAMPLES_COUNT * SAMPLE_LEN.
- * @remark The array of data points must be in the correct order.
- */
-C_KZG_RET samples_to_blob(
-    Blob *blob, const Bytes32 *data, const KZGSettings *s
-) {
-    (void)s; // Will be used later.
-    memcpy(&blob->bytes, data, BYTES_PER_BLOB);
-    return C_KZG_OK;
 }
 
 /**
