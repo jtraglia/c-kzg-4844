@@ -62,8 +62,12 @@ pub struct KZGProof {
 
 #[derive(Debug)]
 pub enum Error {
+    /// Wrong number of blobs.
+    InvalidBlobsLength,
     /// Wrong number of bytes.
     InvalidBytesLength(String),
+    /// Wrong number of field elements.
+    InvalidFieldElementsLength,
     /// The hex string is invalid.
     InvalidHexFormat(String),
     /// The KZG proof is invalid.
@@ -194,6 +198,64 @@ impl Drop for KZGSettings {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct Sample(Vec<Bytes32>);
+
+impl Sample {
+    pub fn as_slice(&self) -> &[Bytes32] {
+        self.0.as_slice()
+    }
+
+    pub fn from_field_elements(
+        elements: &[Bytes32],
+        kzg_settings: &KZGSettings,
+    ) -> Result<Self, Error> {
+        if elements.len() != kzg_settings.sample_size as usize {
+            return Err(Error::InvalidFieldElementsLength);
+        }
+        Ok(Self(Vec::from(elements)))
+    }
+}
+
+pub struct SampleMatrix<const ROWS: usize, const COLS: usize> {
+    matrix: Vec<Vec<Sample>>,
+}
+
+impl<const ROWS: usize, const COLS: usize> SampleMatrix<ROWS, COLS> {
+    pub fn entry(&self, row: usize, col: usize) -> Option<&Sample> {
+        if row >= ROWS || col >= COLS {
+            return None;
+        }
+
+        Some(&self.matrix[row][col])
+    }
+
+    pub fn from_field_elements(
+        elements: &[Bytes32],
+        kzg_settings: &KZGSettings,
+    ) -> Result<Self, Error> {
+        if elements.len() != ROWS * COLS * kzg_settings.sample_size as usize {
+            return Err(Error::InvalidFieldElementsLength);
+        }
+
+        let mut matrix = Vec::with_capacity(ROWS);
+        for i in 0..ROWS {
+            let mut row = Vec::with_capacity(COLS);
+            for j in 0..COLS {
+                let start =
+                    i * kzg_settings.max_width as usize + j * kzg_settings.sample_size as usize;
+                let end = start + kzg_settings.sample_size as usize;
+                let sample =
+                    Sample::from_field_elements(&elements[start..end], kzg_settings).unwrap();
+                row.push(sample);
+            }
+            matrix.push(row);
+        }
+
+        Ok(Self { matrix })
+    }
+}
+
 impl Blob {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
         if bytes.len() != BYTES_PER_BLOB {
@@ -215,7 +277,7 @@ impl Blob {
     pub fn samples_and_proofs(
         &self,
         kzg_settings: &KZGSettings,
-    ) -> Result<Vec<(Vec<Bytes32>, KZGProof)>, Error> {
+    ) -> Result<Vec<(Sample, KZGProof)>, Error> {
         let samples_len = kzg_settings.max_width as usize;
         let proofs_len = kzg_settings.sample_count as usize;
 
@@ -232,14 +294,40 @@ impl Blob {
             if res != C_KZG_RET::C_KZG_OK {
                 return Err(Error::CError(res));
             }
+            samples.set_len(samples_len);
+            proofs.set_len(proofs_len);
         }
 
-        let sample_len = kzg_settings.sample_size as usize;
-        let samples = samples.chunks_exact(sample_len).map(Vec::from);
-
+        let samples = samples
+            .chunks_exact(kzg_settings.sample_size as usize)
+            .map(|felts| Sample::from_field_elements(felts, kzg_settings).unwrap());
         let ret = samples.zip(proofs).collect();
         Ok(ret)
     }
+}
+
+pub fn two_dim_samples<const ROWS: usize, const COLS: usize>(
+    blobs: Vec<Blob>,
+    kzg_settings: &KZGSettings,
+) -> Result<SampleMatrix<ROWS, COLS>, Error> {
+    if blobs.len() != kzg_settings.blob_count as usize {
+        return Err(Error::InvalidBlobsLength);
+    }
+
+    let len = (kzg_settings.sample_count.pow(2) * kzg_settings.sample_size) as usize;
+    let mut out: Vec<Bytes32> = Vec::with_capacity(len);
+    unsafe {
+        let res = get_2d_samples(out.as_mut_ptr(), blobs.as_ptr(), kzg_settings);
+        if res != C_KZG_RET::C_KZG_OK {
+            return Err(Error::CError(res));
+        }
+        out.set_len(len);
+    }
+
+    // NOTE: this conversion should be infalliable
+    let samples = SampleMatrix::from_field_elements(out.as_slice(), kzg_settings).unwrap();
+
+    Ok(samples)
 }
 
 impl Bytes32 {
@@ -258,6 +346,10 @@ impl Bytes32 {
 
     pub fn from_hex(hex_str: &str) -> Result<Self, Error> {
         Self::from_bytes(&hex_to_bytes(hex_str)?)
+    }
+
+    pub fn into_inner(self) -> [u8; 32] {
+        self.bytes
     }
 }
 
@@ -437,7 +529,7 @@ impl KZGProof {
     }
 
     pub fn verify_sample_kzg_proof(
-        sample: Vec<Bytes32>,
+        sample: Sample,
         index: usize,
         commitment_bytes: Bytes48,
         proof_bytes: Bytes48,
@@ -449,7 +541,7 @@ impl KZGProof {
                 verified.as_mut_ptr(),
                 &commitment_bytes,
                 &proof_bytes,
-                sample.as_ptr(),
+                sample.0.as_ptr(),
                 index,
                 kzg_settings,
             );

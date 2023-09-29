@@ -254,6 +254,10 @@ C_KZG_RET verify_sample_proof(
     const KZGSettings *s
 );
 
+C_KZG_RET get_2d_samples(
+    Bytes32 *data, const Blob *blobs, const KZGSettings *s
+);
+
 #ifdef __cplusplus
 }
 #endif
