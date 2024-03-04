@@ -39,10 +39,9 @@ jobs:
       - name: Install cibuildwheel
         run: python -m pip install cibuildwheel==2.16.5
 
-      #- name: Configure Environment for Windows
-      #  if: runner.os == 'Windows'
-      #  run: |
-      #  shell: bash
+      - name: Add msbuild to PATH
+        if: runner.os == 'Windows'
+        uses: microsoft/setup-msbuild@v2
 
       - name: Build wheels
         run: python -m cibuildwheel --output-dir wheelhouse bindings/python
