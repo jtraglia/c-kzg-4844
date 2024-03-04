@@ -42,9 +42,6 @@ jobs:
       #- name: Configure Environment for Windows
       #  if: runner.os == 'Windows'
       #  run: |
-      #    echo "CC=gcc" >> $GITHUB_ENV
-      #    echo "CXX=g++" >> $GITHUB_ENV
-      #    echo "DISTUTILS_USE_SDK=1" >> $GITHUB_ENV
       #  shell: bash
 
       - name: Build wheels
@@ -54,13 +51,18 @@ jobs:
           # musllinux uses apk & manylinux uses yum
           CIBW_BEFORE_BUILD_LINUX: |
             if command -v apk > /dev/null; then
-              apk add --update clang && make -C src c_kzg_4844.o
+              apk add --update clang && make -C src blst
             elif command -v yum > /dev/null; then
-              yum install -y clang && make -C src c_kzg_4844.o
+              yum install -y clang && make -C src blst
             fi
+          CIBW_ENVIRONMENT_WINDOWS: |
+            DISTUTILS_USE_SDK=1
+            CC=gcc
+            CXX=g++
           CIBW_BEFORE_BUILD_WINDOWS: |
-            cd blst && cmd //c build.bat -D__BLST_PORTABLE__ && cp blst.lib ../lib && cp *.h ../inc
+            #cd blst && cmd //c build.bat -D__BLST_PORTABLE__ && cp blst.lib ../lib && cp *.h ../inc
+            make -C src blst
           CIBW_BEFORE_BUILD_MACOS: |
-            make -C src c_kzg_4844.o
+            make -C src blst
 
 
