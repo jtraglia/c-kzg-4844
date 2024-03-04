@@ -59,6 +59,7 @@ jobs:
             CC=gcc
             CXX=g++
           CIBW_BEFORE_BUILD_WINDOWS: |
+            cd blst && ./build.bat && cp blst.lib ../lib
             make -C src blst
           CIBW_BEFORE_BUILD_MACOS: |
             make -C src blst
