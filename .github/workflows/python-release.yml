@@ -46,6 +46,7 @@ jobs:
       - name: Build wheels
         run: python -m cibuildwheel --output-dir wheelhouse bindings/python
         env:
+
           CIBW_ARCHS_LINUX: x86_64 i686 aarch64
           # musllinux uses apk & manylinux uses yum
           CIBW_BEFORE_BUILD_LINUX: |
@@ -54,10 +55,13 @@ jobs:
             elif command -v yum > /dev/null; then
               yum install -y clang && make -C src blst
             fi
+
+          CIBW_ARCHS_WINDOWS: AMD64
           CIBW_ENVIRONMENT_WINDOWS: |
             DISTUTILS_USE_SDK=1 CC=gcc CXX=g++
           CIBW_BEFORE_BUILD_WINDOWS: |
             cd blst && build.bat && cp blst.lib ../lib && cp bindings/*.h ../inc
+
           CIBW_BEFORE_BUILD_MACOS: |
             make -C src blst
 
