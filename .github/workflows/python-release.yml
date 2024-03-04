@@ -38,10 +38,10 @@ jobs:
 
       - name: Install cibuildwheel
         run: python -m pip install cibuildwheel==2.16.5
-
-      #- name: Add msbuild to PATH
-      #  if: runner.os == 'Windows'
-      #  uses: microsoft/setup-msbuild@v2
+      
+      - name: Set up Visual Studio shell
+        if: runner.os == 'Windows'
+        uses: egor-tensin/vs-shell@v2
 
       - name: Build wheels
         run: python -m cibuildwheel --output-dir wheelhouse bindings/python
@@ -59,7 +59,7 @@ jobs:
             CC=gcc
             CXX=g++
           CIBW_BEFORE_BUILD_WINDOWS: |
-            choco install visualstudio2019buildtools --package-parameters "--add Microsoft.VisualStudio.Component.VC.Tools.x86.x64" && make -C src blst
+            make -C src blst
           CIBW_BEFORE_BUILD_MACOS: |
             make -C src blst
 
