@@ -4,6 +4,9 @@ on:
   release:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
 
 jobs:
   build-wheels:
@@ -49,9 +52,3 @@ jobs:
             make -C src c_kzg_4844.o
           CIBW_BEFORE_BUILD_MACOS: |
             make -C src c_kzg_4844.o
-
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          password: ${{ secrets.PYPI_PASSWORD }}
-          packages-dir: bindings/python/wheelhouse
