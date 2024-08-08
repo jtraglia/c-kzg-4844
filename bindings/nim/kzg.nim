@@ -13,7 +13,7 @@ export
   kzg_abi
 
 const
-  TrustedSetupNotLoadedErr* = "Trusted setup not loaded."
+  TrustedSetupNotLoadedErr* = "Trusted setup is not loaded."
   TrustedSetupAlreadyLoadedErr* = "Trusted setup is already loaded."
 
 type
@@ -75,7 +75,6 @@ proc loadTrustedSetup*(fileName: string, precompute: Natural): Result[void, stri
     file.close()
   except IOError as ex:
     return err(ex.msg)
-  return ok()
 
 proc loadTrustedSetup*(g1MonomialBytes: openArray[byte],
                        g1LagrangeBytes: openArray[byte],
