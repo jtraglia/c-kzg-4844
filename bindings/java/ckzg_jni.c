@@ -8,7 +8,7 @@ static const char *TRUSTED_SETUP_NOT_LOADED = "Trusted Setup is not loaded.";
 
 KZGSettings *settings;
 
-void reset_trusted_setup(void) {
+static void reset_trusted_setup(void) {
   if (settings) {
     free_trusted_setup(settings);
     free(settings);
@@ -16,13 +16,13 @@ void reset_trusted_setup(void) {
   }
 }
 
-void throw_exception(JNIEnv *env, const char *message) {
+static void throw_exception(JNIEnv *env, const char *message) {
   jclass exception_class = (*env)->FindClass(env, "java/lang/RuntimeException");
   (*env)->ThrowNew(env, exception_class, message);
 }
 
-void throw_c_kzg_exception(JNIEnv *env, C_KZG_RET error_code,
-                           const char *message) {
+static void throw_c_kzg_exception(JNIEnv *env, C_KZG_RET error_code,
+                                  const char *message) {
   jclass exception_class =
       (*env)->FindClass(env, "ethereum/ckzg4844/CKZGException");
   jstring error_message = (*env)->NewStringUTF(env, message);
@@ -33,15 +33,15 @@ void throw_c_kzg_exception(JNIEnv *env, C_KZG_RET error_code,
   (*env)->Throw(env, exception);
 }
 
-void throw_invalid_size_exception(JNIEnv *env, const char *prefix, size_t size,
-                                  size_t expected_size) {
+static void throw_invalid_size_exception(JNIEnv *env, const char *prefix,
+                                         size_t size, size_t expected_size) {
   char message[100];
   snprintf(message, sizeof(message), "%s Expected %zu bytes but got %zu.",
            prefix, expected_size, size);
   throw_c_kzg_exception(env, C_KZG_BADARGS, message);
 }
 
-KZGSettings *allocate_settings(JNIEnv *env) {
+static KZGSettings *allocate_settings(JNIEnv *env) {
   KZGSettings *s = malloc(sizeof(KZGSettings));
   if (s == NULL) {
     throw_exception(env, "Failed to allocate memory for the Trusted Setup.");

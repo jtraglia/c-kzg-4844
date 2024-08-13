@@ -2,8 +2,67 @@ INCLUDE_DIRS = ../../src ../../blst/bindings
 
 TARGETS=ckzg_jni.c ../../src/ckzg.c ../../lib/libblst.a
 
-CC_FLAGS=
 OPTIMIZATION_LEVEL=-O2
+
+CC_FLAGS += \
+	-pedantic \
+	-Wall \
+	-Wextra \
+	-Waggregate-return \
+	-Walloca \
+	-Warray-bounds \
+	-Wbad-function-cast \
+	-Wc++-compat \
+	-Wc++11-compat \
+	-Wcast-align \
+	-Wcast-qual \
+	-Wconversion \
+	-Wdisabled-optimization \
+	-Wdouble-promotion \
+	-Wenum-compare \
+	-Wfloat-equal \
+	-Wformat-nonliteral \
+	-Wformat-security \
+	-Wformat-y2k \
+	-Wformat=2 \
+	-Wframe-larger-than=1048576 \
+	-Wimplicit \
+	-Wimplicit-fallthrough \
+	-Winit-self \
+	-Winline \
+	-Winvalid-pch \
+	-Wlarger-than=512 \
+	-Wlong-long \
+	-Wmissing-declarations \
+	-Wmissing-field-initializers \
+	-Wmissing-format-attribute \
+	-Wmissing-include-dirs \
+	-Wmissing-noreturn \
+	-Wmissing-prototypes \
+	-Wnested-externs \
+	-Wnull-dereference \
+	-Wold-style-definition \
+	-Woverlength-strings \
+	-Wpacked \
+	-Wpadded \
+	-Wpointer-arith \
+	-Wredundant-decls \
+	-Wredundant-move \
+	-Wshadow \
+	-Wsign-compare \
+	-Wsign-conversion \
+	-Wstack-protector \
+	-Wstrict-aliasing=2 \
+	-Wstrict-overflow=5 \
+	-Wstrict-prototypes \
+	-Wswitch-default \
+	-Wswitch-enum \
+	-Wtype-limits \
+	-Wundef \
+	-Wuninitialized \
+	-Wunreachable-code \
+	-Wvariadic-macros \
+	-Wwrite-strings
 
 ifeq ($(OS),Windows_NT)
   CLANG_EXECUTABLE=gcc
