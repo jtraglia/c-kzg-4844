@@ -20,7 +20,7 @@ ifeq ($(PLATFORM),Darwin)
 endif
 
 # The base compiler flags. More can be added on command line.
-CFLAGS += -I. -I../inc -O2 -Werror
+CFLAGS += -I. -I../inc -O2 -Werror -Wno-unused-command-line-argument
 # Enable a bunch of optional warnings.
 CFLAGS += \
 	-pedantic \
@@ -243,6 +243,17 @@ analyze: blst $(SOURCE_FILES)
 		$(CC) --analyze -Xanalyzer -analyzer-output=html -o analysis-report $(CFLAGS) -c $$src; \
 		[ -d analysis-report ] && exit 1; true; \
 	done
+
+###############################################################################
+# Tidy
+###############################################################################
+
+compile_commands.json: Makefile
+	@bear -- make
+
+.PHONY: tidy
+tidy: compile_commands.json $(SOURCE_FILES) $(HEADER_FILES)
+	@clang-tidy -p ./compile_commands.json $(SOURCE_FILES) $(HEADER_FILES)
 
 ###############################################################################
 # Cleanup

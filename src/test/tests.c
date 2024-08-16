@@ -86,6 +86,7 @@ static void get_rand_g2(g2_t *out) {
 static void bytes32_from_hex(Bytes32 *out, const char *hex) {
     int matches;
     for (size_t i = 0; i < sizeof(Bytes32); i++) {
+        /* NOLINTNEXTLINE(clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling) */
         matches = sscanf(hex + i * 2, "%2hhx", &out->bytes[i]);
         ASSERT_EQUALS(matches, 1);
     }
@@ -94,6 +95,7 @@ static void bytes32_from_hex(Bytes32 *out, const char *hex) {
 static void bytes48_from_hex(Bytes48 *out, const char *hex) {
     int matches;
     for (size_t i = 0; i < sizeof(Bytes48); i++) {
+        /* NOLINTNEXTLINE(clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling) */
         matches = sscanf(hex + i * 2, "%2hhx", &out->bytes[i]);
         ASSERT_EQUALS(matches, 1);
     }

@@ -117,6 +117,7 @@ C_KZG_RET bit_reversal_permutation(void *values, size_t size, size_t n) {
     /* Reorder elements */
     uint64_t unused_bit_len = 64 - log2_pow2(n);
     for (size_t i = 0; i < n; i++) {
+        /* NOLINTNEXTLINE(clang-analyzer-core.BitwiseShift) */
         uint64_t r = reverse_bits(i) >> unused_bit_len;
         if (r > i) {
             /* Swap the two elements */

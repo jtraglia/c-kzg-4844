@@ -506,6 +506,8 @@ C_KZG_RET load_trusted_setup_file(KZGSettings *out, FILE *in, uint64_t precomput
     ret = c_kzg_calloc((void **)&g2_monomial_bytes, NUM_G2_POINTS, BYTES_PER_G2);
     if (ret != C_KZG_OK) goto out;
 
+    /* NOLINTBEGIN(clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling) */
+
     /* Read the number of g1 points */
     num_matches = fscanf(in, "%" SCNu64, &num_g1_points);
     if (num_matches != 1 || num_g1_points != NUM_G1_POINTS) {
@@ -547,6 +549,8 @@ C_KZG_RET load_trusted_setup_file(KZGSettings *out, FILE *in, uint64_t precomput
             goto out;
         }
     }
+
+    /* NOLINTEND(clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling) */
 
     ret = load_trusted_setup(
         out,
