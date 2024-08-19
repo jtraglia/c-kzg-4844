@@ -49,8 +49,9 @@ bool is_power_of_two(uint64_t n) {
  */
 uint64_t log2_pow2(uint64_t n) {
     uint64_t position = 0;
-    while (n >>= 1)
+    while (n >>= 1) {
         position++;
+    }
     return position;
 }
 

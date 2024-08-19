@@ -167,6 +167,7 @@ out:
         for (size_t i = 0; i < k2; i++) {
             c_kzg_free(coeffs[i]);
         }
+        /* NOLINTNEXTLINE(bugprone-multi-level-implicit-pointer-conversion) */
         c_kzg_free(coeffs);
     }
     c_kzg_free(toeplitz_coeffs);

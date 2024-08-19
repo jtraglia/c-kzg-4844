@@ -1,2 +1,2 @@
 ---
-Checks: ''
+Checks: 'bugprone-*,-bugprone-easily-swappable-parameters,-bugprone-implicit-widening-of-multiplication-result,performance-*,portability-*,cert-*'

@@ -1,8 +1,10 @@
 /*
  * This file contains unit tests for C-KZG-4844.
  */
-#include "ckzg.c"
 #include "tinytest.h"
+
+/* NOLINTNEXTLINE(bugprone-suspicious-include) */
+#include "ckzg.c"
 
 #include <assert.h>
 #include <stdio.h>

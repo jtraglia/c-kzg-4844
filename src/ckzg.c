@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+/* NOLINTBEGIN(bugprone-suspicious-include) */
 #include "common/alloc.c"
 #include "common/bytes.c"
 #include "common/ec.c"
@@ -29,3 +30,4 @@
 #include "eip7594/poly.c"
 #include "eip7594/recovery.c"
 #include "setup/setup.c"
+/* NOLINTEND(bugprone-suspicious-include) */

@@ -21,6 +21,8 @@
 #include "eip7594/fft.h"
 
 #include <assert.h>   /* For assert */
+#include <ctype.h>    /* For isxdigit */
+#include <errno.h>    /* For errno */
 #include <inttypes.h> /* For SCNu64 */
 #include <stdio.h>    /* For FILE */
 #include <stdlib.h>   /* For NULL */
@@ -180,7 +182,9 @@ void free_trusted_setup(KZGSettings *s) {
             c_kzg_free(s->tables[i]);
         }
     }
+    /* NOLINTNEXTLINE(bugprone-multi-level-implicit-pointer-conversion) */
     c_kzg_free(s->x_ext_fft_columns);
+    /* NOLINTNEXTLINE(bugprone-multi-level-implicit-pointer-conversion) */
     c_kzg_free(s->tables);
     s->wbits = 0;
     s->scratch_size = 0;
@@ -477,6 +481,68 @@ out_success:
     return ret;
 }
 
+static C_KZG_RET read_hex_byte(uint8_t *result, FILE *in) {
+    int ch;
+
+    /* Buffer to hold two hex characters and a null terminator */
+    char buffer[3];
+
+    /* Read the first hex digit */
+    ch = fgetc(in);
+    if (ch == EOF || !isxdigit(ch)) {
+        printf("%c\n", ch);
+        printf("blah\n");
+        return C_KZG_ERROR;
+    }
+    buffer[0] = (char)ch;
+
+    /* Read the second hex digit */
+    ch = fgetc(in);
+    if (ch == EOF || !isxdigit(ch)) {
+        printf("blah 2\n");
+        return C_KZG_ERROR;
+    }
+    buffer[1] = (char)ch;
+
+    buffer[2] = '\0'; // Null-terminate the string
+
+    /* Convert the string to a byte */
+    *result = (uint8_t)strtol(buffer, NULL, 16);
+
+    printf("ch: %c\n", ch);
+    return C_KZG_OK;
+}
+
+static C_KZG_RET read_uint64(uint64_t *result, FILE *in) {
+    char buffer[256];
+    char *endptr;
+    uint64_t value;
+
+    /* Read some bytes from the file */
+    if (fgets(buffer, sizeof(buffer), in) == NULL) {
+        return C_KZG_ERROR;
+    }
+
+    /* Convert the string to a uint64_t */
+    value = strtoull(buffer, &endptr, 10);
+
+    if (endptr == buffer) {
+        /* No digits were found */
+        return C_KZG_ERROR;
+    } else if (*endptr != '\n' && *endptr != '\0') {
+        /* Trailing characters after the number */
+        return C_KZG_ERROR;
+    }
+
+    if (value == UINT64_MAX && buffer[0] != '0') {
+        /* Number out of range for uint64_t */
+        return C_KZG_ERROR;
+    }
+
+    *result = value;
+    return C_KZG_OK;
+}
+
 /**
  * Load trusted setup from a file.
  *
@@ -509,26 +575,17 @@ C_KZG_RET load_trusted_setup_file(KZGSettings *out, FILE *in, uint64_t precomput
     /* NOLINTBEGIN(clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling) */
 
     /* Read the number of g1 points */
-    num_matches = fscanf(in, "%" SCNu64, &num_g1_points);
-    if (num_matches != 1 || num_g1_points != NUM_G1_POINTS) {
-        ret = C_KZG_BADARGS;
-        goto out;
-    }
+    ret = read_uint64(&num_g1_points, in);
+    if (ret != C_KZG_OK) goto out;
 
     /* Read the number of g2 points */
-    num_matches = fscanf(in, "%" SCNu64, &num_g2_points);
-    if (num_matches != 1 || num_g2_points != NUM_G2_POINTS) {
-        ret = C_KZG_BADARGS;
-        goto out;
-    }
+    ret = read_uint64(&num_g2_points, in);
+    if (ret != C_KZG_OK) goto out;
 
     /* Read all of the g1 points in Lagrange form, byte by byte */
     for (size_t i = 0; i < NUM_G1_POINTS * BYTES_PER_G1; i++) {
-        num_matches = fscanf(in, "%2hhx", &g1_lagrange_bytes[i]);
-        if (num_matches != 1) {
-            ret = C_KZG_BADARGS;
-            goto out;
-        }
+        ret = read_hex_byte(&g1_lagrange_bytes[i], in);
+        if (ret != C_KZG_OK) goto out;
     }
 
     /* Read all of the g2 points in monomial form, byte by byte */

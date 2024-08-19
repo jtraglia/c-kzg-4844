@@ -98,7 +98,8 @@ void fr_pow(fr_t *out, const fr_t *a, uint64_t n) {
         if (n & 1) {
             blst_fr_mul(out, out, &tmp);
         }
-        if ((n >>= 1) == 0) break;
+        n = n >> 1;
+        if (n == 0) break;
         blst_fr_sqr(&tmp, &tmp);
     }
 }
