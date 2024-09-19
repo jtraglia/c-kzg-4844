@@ -46,6 +46,9 @@ static const char *RANDOM_CHALLENGE_DOMAIN_VERIFY_CELL_KZG_PROOF_BATCH = "RCKZGC
  *
  * for (size_t i = 0; i < CELLS_PER_EXT_BLOB; i++)
  *   printf("%#04llx,\n", reverse_bits_limited(CELLS_PER_EXT_BLOB, i));
+ *
+ * Because of the way our evaluation domain is defined, we can use CELL_INDICES_RBL to find the coset factor of a
+ * cell. In particular, for cell i, its coset factor is roots_of_unity[CELLS_INDICES_RBL[i]]
  */
 static const uint64_t CELL_INDICES_RBL[CELLS_PER_EXT_BLOB] = {
     0x00, 0x40, 0x20, 0x60, 0x10, 0x50, 0x30, 0x70, 0x08, 0x48, 0x28, 0x68, 0x18, 0x58, 0x38, 0x78,
