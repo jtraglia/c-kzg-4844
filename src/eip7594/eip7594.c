@@ -728,9 +728,22 @@ static C_KZG_RET computed_weighted_sum_of_proofs(
     if (ret != C_KZG_OK) goto out;
 
     for (uint64_t i = 0; i < num_cells; i++) {
-        /* Calculate index to h_k^n; a root to some power is another root */
-        uint64_t h_k_pow_idx = CELL_INDICES_RBL[cell_indices[i]] * FIELD_ELEMENTS_PER_CELL;
-        /* For readability, assign root to variable using our index */
+        /* Get scaling factor h_k^n where h_k is the coset factor for this cell */
+
+        /*
+         * Get the cell index in reverse-bit order.
+         * This index points to this cell's coset factor h_k in the roots_of_unity array.
+         */
+        uint64_t cell_idx_rbl = CELL_INDICES_RBL[cell_indices[i]];
+
+        /*
+         * Get the index to h_k^n in the roots_of_unity array.
+         *
+         * Multiplying the index of h_k by n, effectively raises h_k to the n-th power,
+         * because advancing in the roots_of_unity array corresponds to increasing exponents.
+         */
+        uint64_t h_k_pow_idx = cell_idx_rbl * FIELD_ELEMENTS_PER_CELL;
+        /* Fetch h_k^n */
         fr_t *h_k_pow = &s->roots_of_unity[h_k_pow_idx];
         /* Scale the power of r by h_k^n */
         blst_fr_mul(&weighted_powers_of_r[i], &r_powers[i], h_k_pow);
