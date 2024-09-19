@@ -686,6 +686,7 @@ static C_KZG_RET compute_commitment_to_aggregated_interpolation_poly(
             uint64_t inv_coset_factor_idx = (N - cell_idx_rbl) % N;
 
             /* Get h_k^{-1} using the index */
+            assert(inv_coset_factor_idx < FIELD_ELEMENTS_PER_EXT_BLOB + 1);
             fr_t *inv_coset_factor = &s->roots_of_unity[inv_coset_factor_idx];
 
             /* Now divide by the coset shift factor */
@@ -762,8 +763,11 @@ static C_KZG_RET computed_weighted_sum_of_proofs(
          * because advancing in the roots_of_unity array corresponds to increasing exponents.
          */
         uint64_t h_k_pow_idx = cell_idx_rbl * FIELD_ELEMENTS_PER_CELL;
+
         /* Fetch h_k^n */
+        assert(h_k_pow_idx < FIELD_ELEMENTS_PER_EXT_BLOB + 1);
         fr_t *h_k_pow = &s->roots_of_unity[h_k_pow_idx];
+
         /* Scale the power of r by h_k^n */
         blst_fr_mul(&weighted_powers_of_r[i], &r_powers[i], h_k_pow);
     }
