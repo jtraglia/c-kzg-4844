@@ -534,6 +534,40 @@ out:
 }
 
 /**
+ * Compute the inverse coset factor h_k^{-1} for a given cell index.
+ *
+ * @param[out]  inv_coset_factor_out  Pointer to store the computed inverse coset factor
+ * @param[in]   cell_index            The index of the cell
+ * @param[in]   s                     The trusted setup
+ */
+static void get_inv_coset_shift_for_cell(
+    fr_t *inv_coset_factor_out,
+    uint64_t cell_index,
+    const KZGSettings *s
+) {
+    /*
+     * Get the cell index in reverse-bit order.
+     * This index points to this cell's coset factor h_k in the roots_of_unity array.
+     */
+    uint64_t cell_idx_rbl = CELL_INDICES_RBL[cell_index];
+
+    /*
+     * Observe that for every element in roots_of_unity, we can find its inverse by
+     * accessing its reflected element.
+     *
+     * For example, consider a multiplicative subgroup with eight elements:
+     * roots = {w^0, w^1, w^2, ... w^7, w^0}
+     * For a root of unity in roots[i], we can find its inverse in roots[-i].
+     */
+    uint64_t N = FIELD_ELEMENTS_PER_EXT_BLOB;
+    uint64_t inv_coset_factor_idx = (N - cell_idx_rbl) % N;
+
+    /* Get h_k^{-1} using the index */
+    assert(inv_coset_factor_idx < FIELD_ELEMENTS_PER_EXT_BLOB + 1);
+    *inv_coset_factor_out = s->roots_of_unity[inv_coset_factor_idx];
+}
+
+/**
  * Aggregate columns, compute the sum of interpolation polynomials, and commit to the result.
  *
  * This function computes `RLI = [sum_k r^k interpolation_poly_k(s)]` from the spec.
@@ -670,31 +704,9 @@ static C_KZG_RET compute_commitment_to_aggregated_interpolation_poly(
         if (ret != C_KZG_OK) goto out;
 
         /* Shift the poly by h_k^{-1} where h_k is the coset factor for this cell */
-        {
-            /*
-             * Get the cell index in reverse-bit order.
-             * This index points to this cell's coset factor h_k in the roots_of_unity array.
-             */
-            uint64_t cell_idx_rbl = CELL_INDICES_RBL[i];
-
-            /*
-             * Observe that for every element in roots_of_unity, we can find its inverse by
-             * accessing its reflected element.
-             *
-             * For example, consider a multiplicative subgroup with eight elements:
-             * roots = {w^0, w^1, w^2, ... w^7, w^0}
-             * For a root of unity in roots[i], we can find its inverse in roots[-i].
-             */
-            uint64_t N = FIELD_ELEMENTS_PER_EXT_BLOB;
-            uint64_t inv_coset_factor_idx = (N - cell_idx_rbl) % N;
-
-            /* Get h_k^{-1} using the index */
-            assert(inv_coset_factor_idx < FIELD_ELEMENTS_PER_EXT_BLOB + 1);
-            fr_t *inv_coset_factor = &s->roots_of_unity[inv_coset_factor_idx];
-
-            /* Now divide by the coset shift factor */
-            shift_poly(column_interpolation_poly, FIELD_ELEMENTS_PER_CELL, inv_coset_factor);
-        }
+        fr_t inv_coset_factor;
+        get_inv_coset_shift_for_cell(&inv_coset_factor, i, s);
+        shift_poly(column_interpolation_poly, FIELD_ELEMENTS_PER_CELL, &inv_coset_factor);
 
         /* Update the aggregated poly */
         for (size_t k = 0; k < FIELD_ELEMENTS_PER_CELL; k++) {
