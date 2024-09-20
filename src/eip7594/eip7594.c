@@ -534,7 +534,8 @@ out:
 }
 
 /**
- * Compute the inverse coset factor h_k^{-1} for a given cell index.
+ * Compute the inverse coset factor h_k^{-1},
+*  where `h_k` is the coset factor for cell with index `k`.
  *
  * @param[out]  inv_coset_factor_out  Pointer to store the computed inverse coset factor
  * @param[in]   cell_index            The index of the cell
@@ -565,6 +566,38 @@ static void get_inv_coset_shift_for_cell(
     /* Get h_k^{-1} using the index */
     assert(inv_coset_factor_idx < FIELD_ELEMENTS_PER_EXT_BLOB + 1);
     *inv_coset_factor_out = s->roots_of_unity[inv_coset_factor_idx];
+}
+
+
+/**
+ * Compute h_k^{n}, where `h_k` is the coset factor for cell with index `k`.
+ *
+ * @param[out]  coset_factor_out  Pointer to store h_k^{n}
+ * @param[in]   cell_index        The index of the cell
+ * @param[in]   s                 The trusted setup
+ */
+static void get_coset_shift_pow_for_cell(
+    fr_t *coset_factor_out,
+    uint64_t cell_index,
+    const KZGSettings *s
+) {
+    /*
+     * Get the cell index in reverse-bit order.
+     * This index points to this cell's coset factor h_k in the roots_of_unity array.
+     */
+    uint64_t cell_idx_rbl = CELL_INDICES_RBL[cell_index];
+
+    /*
+     * Get the index to h_k^n in the roots_of_unity array.
+     *
+     * Multiplying the index of h_k by n, effectively raises h_k to the n-th power,
+     * because advancing in the roots_of_unity array corresponds to increasing exponents.
+     */
+    uint64_t h_k_pow_idx = cell_idx_rbl * FIELD_ELEMENTS_PER_CELL;
+
+    /* Get h_k^n using the index */
+    assert(h_k_pow_idx < FIELD_ELEMENTS_PER_EXT_BLOB + 1);
+    *coset_factor_out = s->roots_of_unity[h_k_pow_idx];
 }
 
 /**
@@ -764,27 +797,11 @@ static C_KZG_RET computed_weighted_sum_of_proofs(
 
     for (uint64_t i = 0; i < num_cells; i++) {
         /* Get scaling factor h_k^n where h_k is the coset factor for this cell */
-
-        /*
-         * Get the cell index in reverse-bit order.
-         * This index points to this cell's coset factor h_k in the roots_of_unity array.
-         */
-        uint64_t cell_idx_rbl = CELL_INDICES_RBL[cell_indices[i]];
-
-        /*
-         * Get the index to h_k^n in the roots_of_unity array.
-         *
-         * Multiplying the index of h_k by n, effectively raises h_k to the n-th power,
-         * because advancing in the roots_of_unity array corresponds to increasing exponents.
-         */
-        uint64_t h_k_pow_idx = cell_idx_rbl * FIELD_ELEMENTS_PER_CELL;
-
-        /* Fetch h_k^n */
-        assert(h_k_pow_idx < FIELD_ELEMENTS_PER_EXT_BLOB + 1);
-        fr_t *h_k_pow = &s->roots_of_unity[h_k_pow_idx];
+        fr_t h_k_pow;
+        get_coset_shift_pow_for_cell(&h_k_pow, cell_indices[i], s);
 
         /* Scale the power of r by h_k^n */
-        blst_fr_mul(&weighted_powers_of_r[i], &r_powers[i], h_k_pow);
+        blst_fr_mul(&weighted_powers_of_r[i], &r_powers[i], &h_k_pow);
     }
 
     ret = g1_lincomb_fast(weighted_proof_sum_out, proofs_g1, weighted_powers_of_r, num_cells);
