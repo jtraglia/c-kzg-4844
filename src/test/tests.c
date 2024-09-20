@@ -1850,7 +1850,7 @@ static void test_shift_factors__succeeds(void) {
     /* Loop over all cells */
     for (uint64_t cell_index = 0; cell_index < CELLS_PER_EXT_BLOB; cell_index++) {
         /* Get the cell index in reverse-bit order */
-        uint64_t cell_idx_rbl = CELL_INDICES_RBL[cell_index];
+        uint64_t cell_idx_rbl = reverse_bits_limited(CELLS_PER_EXT_BLOB, cell_index);
 
         /* Ensure the index is within bounds */
         assert(cell_idx_rbl < FIELD_ELEMENTS_PER_EXT_BLOB + 1);
