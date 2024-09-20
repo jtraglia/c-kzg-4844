@@ -560,8 +560,7 @@ static void get_inv_coset_shift_for_cell(
      * roots = {w^0, w^1, w^2, ... w^7, w^0}
      * For a root of unity in roots[i], we can find its inverse in roots[-i].
      */
-    uint64_t N = FIELD_ELEMENTS_PER_EXT_BLOB;
-    uint64_t inv_coset_factor_idx = (N - cell_idx_rbl) % N;
+    uint64_t inv_coset_factor_idx = FIELD_ELEMENTS_PER_EXT_BLOB - cell_idx_rbl;
 
     /* Get h_k^{-1} using the index */
     assert(inv_coset_factor_idx < FIELD_ELEMENTS_PER_EXT_BLOB + 1);
