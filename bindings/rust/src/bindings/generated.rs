@@ -102,9 +102,9 @@ pub struct KZGSettings {
     #[doc = " The precomputed tables for fixed-base MSM."]
     tables: *mut *mut blst_p1_affine,
     #[doc = " The window size for the fixed-base MSM."]
-    wbits: usize,
+    wbits: u64,
     #[doc = " The scratch size for the fixed-base MSM."]
-    scratch_size: usize,
+    scratch_size: u64,
 }
 #[doc = " A single cell for a blob."]
 #[repr(C)]
