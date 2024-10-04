@@ -49,7 +49,7 @@ static void get_rand_fr(fr_t *out) {
 }
 
 static void get_rand_blob(Blob *out) {
-    for (size_t i = 0; i < FIELD_ELEMENTS_PER_BLOB; i++) {
+    for (uint64_t i = 0; i < FIELD_ELEMENTS_PER_BLOB; i++) {
         get_rand_field_element((Bytes32 *)&out->bytes[i * 32]);
     }
 }
@@ -85,7 +85,7 @@ static void get_rand_g2(g2_t *out) {
 
 static void bytes32_from_hex(Bytes32 *out, const char *hex) {
     int matches;
-    for (size_t i = 0; i < sizeof(Bytes32); i++) {
+    for (uint64_t i = 0; i < sizeof(Bytes32); i++) {
         matches = sscanf(hex + i * 2, "%2hhx", &out->bytes[i]);
         ASSERT_EQUALS(matches, 1);
     }
@@ -93,7 +93,7 @@ static void bytes32_from_hex(Bytes32 *out, const char *hex) {
 
 static void bytes48_from_hex(Bytes48 *out, const char *hex) {
     int matches;
-    for (size_t i = 0; i < sizeof(Bytes48); i++) {
+    for (uint64_t i = 0; i < sizeof(Bytes48); i++) {
         matches = sscanf(hex + i * 2, "%2hhx", &out->bytes[i]);
         ASSERT_EQUALS(matches, 1);
     }
@@ -107,7 +107,7 @@ static void get_rand_uint64(uint64_t *out) {
 
 static void eval_poly(fr_t *out, fr_t *poly_coefficients, fr_t *x) {
     *out = poly_coefficients[FIELD_ELEMENTS_PER_BLOB - 1];
-    for (size_t i = FIELD_ELEMENTS_PER_BLOB - 1; i > 0; i--) {
+    for (uint64_t i = FIELD_ELEMENTS_PER_BLOB - 1; i > 0; i--) {
         blst_fr_mul(out, out, x);
         blst_fr_add(out, out, &poly_coefficients[i - 1]);
     }
@@ -115,7 +115,7 @@ static void eval_poly(fr_t *out, fr_t *poly_coefficients, fr_t *x) {
 
 static void eval_extended_poly(fr_t *out, fr_t *poly_coefficients, fr_t *x) {
     *out = poly_coefficients[FIELD_ELEMENTS_PER_EXT_BLOB - 1];
-    for (size_t i = FIELD_ELEMENTS_PER_EXT_BLOB - 1; i > 0; i--) {
+    for (uint64_t i = FIELD_ELEMENTS_PER_EXT_BLOB - 1; i > 0; i--) {
         blst_fr_mul(out, out, x);
         blst_fr_add(out, out, &poly_coefficients[i - 1]);
     }
@@ -263,7 +263,7 @@ static void test_fr_pow__test_power_of_two(void) {
 static void test_fr_pow__test_inverse_on_root_of_unity(void) {
     fr_t r;
 
-    size_t order = log2_pow2(FIELD_ELEMENTS_PER_EXT_BLOB);
+    uint64_t order = log2_pow2(FIELD_ELEMENTS_PER_EXT_BLOB);
     fr_pow(&r, &ROOT_OF_UNITY, 1ULL << order);
 
     bool ok = fr_equal(&r, &FR_ONE);
@@ -278,7 +278,7 @@ static void test_fr_batch_inv__test_consistent(void) {
     C_KZG_RET ret;
     fr_t a[32], batch_inverses[32], check_inverses[32];
 
-    for (size_t i = 0; i < 32; i++) {
+    for (uint64_t i = 0; i < 32; i++) {
         get_rand_fr(&a[i]);
         blst_fr_eucl_inverse(&check_inverses[i], &a[i]);
     }
@@ -286,7 +286,7 @@ static void test_fr_batch_inv__test_consistent(void) {
     ret = fr_batch_inv(batch_inverses, a, 32);
     ASSERT_EQUALS(ret, C_KZG_OK);
 
-    for (size_t i = 0; i < 32; i++) {
+    for (uint64_t i = 0; i < 32; i++) {
         bool ok = fr_equal(&check_inverses[i], &batch_inverses[i]);
         ASSERT_EQUALS(ok, true);
     }
@@ -297,7 +297,7 @@ static void test_fr_batch_inv__test_zero(void) {
     C_KZG_RET ret;
     fr_t a[32], batch_inverses[32];
 
-    for (size_t i = 0; i < 32; i++) {
+    for (uint64_t i = 0; i < 32; i++) {
         get_rand_fr(&a[i]);
     }
 
@@ -353,7 +353,7 @@ static void test_g1_mul__test_different_bit_lengths(void) {
     /* blst_p1_mult needs it to be little-endian */
     blst_lendian_from_scalar(b.bytes, &scalar);
 
-    for (size_t i = 1; i < 255; i++) {
+    for (uint64_t i = 1; i < 255; i++) {
         get_rand_g1(&g);
 
         blst_p1_mult(&check, &g, b.bytes, 256);
@@ -786,7 +786,7 @@ static void test_bit_reversal_permutation__succeeds_round_trip(void) {
     uint64_t original[128];
     uint64_t reversed_reversed[128];
 
-    for (size_t i = 0; i < 128; i++) {
+    for (uint64_t i = 0; i < 128; i++) {
         get_rand_uint64(&original[i]);
         reversed_reversed[i] = original[i];
     }
@@ -794,7 +794,7 @@ static void test_bit_reversal_permutation__succeeds_round_trip(void) {
     ASSERT_EQUALS(ret, C_KZG_OK);
     ret = bit_reversal_permutation(&reversed_reversed, sizeof(uint64_t), 128);
     ASSERT_EQUALS(ret, C_KZG_OK);
-    for (size_t i = 0; i < 128; i++) {
+    for (uint64_t i = 0; i < 128; i++) {
         ASSERT_EQUALS(reversed_reversed[i], original[i]);
     }
 }
@@ -804,7 +804,7 @@ static void test_bit_reversal_permutation__specific_items(void) {
     uint64_t original[128];
     uint64_t reversed[128];
 
-    for (size_t i = 0; i < 128; i++) {
+    for (uint64_t i = 0; i < 128; i++) {
         get_rand_uint64(&original[i]);
         reversed[i] = original[i];
     }
@@ -829,14 +829,14 @@ static void test_bit_reversal_permutation__coset_structure(void) {
     uint64_t original[256];
     uint64_t reversed[256];
 
-    for (size_t i = 0; i < 256; i++) {
+    for (uint64_t i = 0; i < 256; i++) {
         original[i] = i % 16;
         reversed[i] = original[i];
     }
     ret = bit_reversal_permutation(&reversed, sizeof(uint64_t), 256);
     ASSERT_EQUALS(ret, C_KZG_OK);
-    for (size_t i = 0; i < 16; i++) {
-        for (size_t j = 1; j < 16; j++) {
+    for (uint64_t i = 0; i < 16; i++) {
+        for (uint64_t j = 1; j < 16; j++) {
             ASSERT_EQUALS(reversed[16 * i], reversed[16 * i + j]);
         }
     }
@@ -846,7 +846,7 @@ static void test_bit_reversal_permutation__fails_n_not_power_of_two(void) {
     C_KZG_RET ret;
     uint64_t reversed[256];
 
-    for (size_t i = 0; i < 256; i++) {
+    for (uint64_t i = 0; i < 256; i++) {
         reversed[i] = 0;
     }
     ret = bit_reversal_permutation(&reversed, sizeof(uint64_t), 255);
@@ -857,7 +857,7 @@ static void test_bit_reversal_permutation__fails_n_is_one(void) {
     C_KZG_RET ret;
     uint64_t reversed[1];
 
-    for (size_t i = 0; i < 1; i++) {
+    for (uint64_t i = 0; i < 1; i++) {
         reversed[i] = 0;
     }
     ret = bit_reversal_permutation(&reversed, sizeof(uint64_t), 1);
@@ -872,7 +872,7 @@ static void test_compute_powers__succeeds_expected_powers(void) {
     C_KZG_RET ret;
     Bytes32 field_element_bytes;
     fr_t field_element_fr;
-    const size_t n = 3;
+    const uint64_t n = 3;
     int diff;
     fr_t powers[n];
     Bytes32 powers_bytes[n];
@@ -909,7 +909,7 @@ static void test_compute_powers__succeeds_expected_powers(void) {
         &expected_bytes[2], "2f417bcb88693ff8bc5d61b6d44503f3a99e8c3df3891e0040dee96047458a0e"
     );
 
-    for (size_t i = 0; i < n; i++) {
+    for (uint64_t i = 0; i < n; i++) {
         bytes_from_bls_field(&powers_bytes[i], &powers[i]);
         diff = memcmp(powers_bytes[i].bytes, expected_bytes[i].bytes, sizeof(Bytes32));
         ASSERT_EQUALS(diff, 0);
@@ -926,7 +926,7 @@ static void test_g1_lincomb__verify_consistent(void) {
     fr_t scalars[128];
 
     check = G1_IDENTITY;
-    for (size_t i = 0; i < 128; i++) {
+    for (uint64_t i = 0; i < 128; i++) {
         get_rand_fr(&scalars[i]);
         get_rand_g1(&points[i]);
     }
@@ -951,7 +951,7 @@ static void test_evaluate_polynomial_in_evaluation_form__constant_polynomial(voi
     get_rand_fr(&c);
     get_rand_fr(&x);
 
-    for (size_t i = 0; i < FIELD_ELEMENTS_PER_BLOB; i++) {
+    for (uint64_t i = 0; i < FIELD_ELEMENTS_PER_BLOB; i++) {
         p.evals[i] = c;
     }
 
@@ -969,7 +969,7 @@ static void test_evaluate_polynomial_in_evaluation_form__constant_polynomial_in_
     get_rand_fr(&c);
     x = s.brp_roots_of_unity[123];
 
-    for (size_t i = 0; i < FIELD_ELEMENTS_PER_BLOB; i++) {
+    for (uint64_t i = 0; i < FIELD_ELEMENTS_PER_BLOB; i++) {
         p.evals[i] = c;
     }
 
@@ -985,11 +985,11 @@ static void test_evaluate_polynomial_in_evaluation_form__random_polynomial(void)
     Polynomial p;
     fr_t x, y, check;
 
-    for (size_t i = 0; i < FIELD_ELEMENTS_PER_BLOB; i++) {
+    for (uint64_t i = 0; i < FIELD_ELEMENTS_PER_BLOB; i++) {
         get_rand_fr(&poly_coefficients[i]);
     }
 
-    for (size_t i = 0; i < FIELD_ELEMENTS_PER_BLOB; i++) {
+    for (uint64_t i = 0; i < FIELD_ELEMENTS_PER_BLOB; i++) {
         eval_poly(&p.evals[i], poly_coefficients, &s.brp_roots_of_unity[i]);
     }
 
@@ -1017,7 +1017,7 @@ static void test_evaluate_polynomial_in_evaluation_form__random_polynomial(void)
 
 static void test_log2_pow2__succeeds_expected_values(void) {
     uint64_t x = 1;
-    for (size_t i = 0; i < 31; i++) {
+    for (uint64_t i = 0; i < 31; i++) {
         ASSERT_EQUALS(i, log2_pow2(x));
         x <<= 1;
     }
@@ -1029,7 +1029,7 @@ static void test_log2_pow2__succeeds_expected_values(void) {
 
 static void test_is_power_of_two__succeeds_powers_of_two(void) {
     uint64_t x = 1;
-    for (size_t i = 0; i < 63; i++) {
+    for (uint64_t i = 0; i < 63; i++) {
         ASSERT("is_power_of_two good", is_power_of_two(x));
         x <<= 1;
     }
@@ -1037,7 +1037,7 @@ static void test_is_power_of_two__succeeds_powers_of_two(void) {
 
 static void test_is_power_of_two__fails_not_powers_of_two(void) {
     uint64_t x = 4;
-    for (size_t i = 2; i < 63; i++) {
+    for (uint64_t i = 2; i < 63; i++) {
         ASSERT("is_power_of_two bad", !is_power_of_two(x + 1));
         ASSERT("is_power_of_two bad", !is_power_of_two(x - 1));
         x <<= 1;
@@ -1150,7 +1150,7 @@ static void test_compute_and_verify_kzg_proof__succeeds_round_trip(void) {
 }
 
 static void test_compute_and_verify_kzg_proof__succeeds_within_domain(void) {
-    for (size_t i = 0; i < 25; i++) {
+    for (uint64_t i = 0; i < 25; i++) {
         C_KZG_RET ret;
         Blob blob;
         KZGCommitment c;
@@ -1467,7 +1467,7 @@ static void test_compute_and_verify_blob_kzg_proof__fails_invalid_blob(void) {
 
 static void test_verify_kzg_proof_batch__succeeds_round_trip(void) {
     C_KZG_RET ret;
-    const size_t n_cells = 16;
+    const uint64_t n_cells = 16;
     Bytes48 proofs[n_cells];
     KZGCommitment commitments[n_cells];
     Blob *blobs = NULL;
@@ -1478,7 +1478,7 @@ static void test_verify_kzg_proof_batch__succeeds_round_trip(void) {
     ASSERT_EQUALS(ret, C_KZG_OK);
 
     /* Some preparation */
-    for (size_t i = 0; i < n_cells; i++) {
+    for (uint64_t i = 0; i < n_cells; i++) {
         get_rand_blob(&blobs[i]);
         ret = blob_to_kzg_commitment(&commitments[i], &blobs[i], &s);
         ASSERT_EQUALS(ret, C_KZG_OK);
@@ -1488,7 +1488,7 @@ static void test_verify_kzg_proof_batch__succeeds_round_trip(void) {
 
     /* Verify batched proofs for 0,1,2..16 blobs */
     /* This should still work with zero blobs */
-    for (size_t count = 0; count <= n_cells; count++) {
+    for (uint64_t count = 0; count <= n_cells; count++) {
         ret = verify_blob_kzg_proof_batch(&ok, blobs, commitments, proofs, count, &s);
         ASSERT_EQUALS(ret, C_KZG_OK);
         ASSERT_EQUALS(ok, true);
@@ -1500,14 +1500,14 @@ static void test_verify_kzg_proof_batch__succeeds_round_trip(void) {
 
 static void test_verify_kzg_proof_batch__fails_with_incorrect_proof(void) {
     C_KZG_RET ret;
-    const size_t n_cells = 2;
+    const uint64_t n_cells = 2;
     Bytes48 proofs[n_cells];
     KZGCommitment commitments[n_cells];
     Blob blobs[n_cells];
     bool ok;
 
     /* Some preparation */
-    for (size_t i = 0; i < n_cells; i++) {
+    for (uint64_t i = 0; i < n_cells; i++) {
         get_rand_blob(&blobs[i]);
         ret = blob_to_kzg_commitment(&commitments[i], &blobs[i], &s);
         ASSERT_EQUALS(ret, C_KZG_OK);
@@ -1525,14 +1525,14 @@ static void test_verify_kzg_proof_batch__fails_with_incorrect_proof(void) {
 
 static void test_verify_kzg_proof_batch__fails_proof_not_in_g1(void) {
     C_KZG_RET ret;
-    const size_t n_cells = 2;
+    const uint64_t n_cells = 2;
     Bytes48 proofs[n_cells];
     KZGCommitment commitments[n_cells];
     Blob blobs[n_cells];
     bool ok;
 
     /* Some preparation */
-    for (size_t i = 0; i < n_cells; i++) {
+    for (uint64_t i = 0; i < n_cells; i++) {
         get_rand_blob(&blobs[i]);
         ret = blob_to_kzg_commitment(&commitments[i], &blobs[i], &s);
         ASSERT_EQUALS(ret, C_KZG_OK);
@@ -1553,14 +1553,14 @@ static void test_verify_kzg_proof_batch__fails_proof_not_in_g1(void) {
 
 static void test_verify_kzg_proof_batch__fails_commitment_not_in_g1(void) {
     C_KZG_RET ret;
-    const size_t n_cells = 2;
+    const uint64_t n_cells = 2;
     Bytes48 proofs[n_cells];
     KZGCommitment commitments[n_cells];
     Blob blobs[n_cells];
     bool ok;
 
     /* Some preparation */
-    for (size_t i = 0; i < n_cells; i++) {
+    for (uint64_t i = 0; i < n_cells; i++) {
         get_rand_blob(&blobs[i]);
         ret = blob_to_kzg_commitment(&commitments[i], &blobs[i], &s);
         ASSERT_EQUALS(ret, C_KZG_OK);
@@ -1581,7 +1581,7 @@ static void test_verify_kzg_proof_batch__fails_commitment_not_in_g1(void) {
 
 static void test_verify_kzg_proof_batch__fails_invalid_blob(void) {
     C_KZG_RET ret;
-    const size_t n_cells = 2;
+    const uint64_t n_cells = 2;
     Bytes48 proofs[n_cells];
     KZGCommitment commitments[n_cells];
     Blob blobs[n_cells];
@@ -1589,7 +1589,7 @@ static void test_verify_kzg_proof_batch__fails_invalid_blob(void) {
     bool ok;
 
     /* Some preparation */
-    for (size_t i = 0; i < n_cells; i++) {
+    for (uint64_t i = 0; i < n_cells; i++) {
         get_rand_blob(&blobs[i]);
         ret = blob_to_kzg_commitment(&commitments[i], &blobs[i], &s);
         ASSERT_EQUALS(ret, C_KZG_OK);
@@ -1682,13 +1682,13 @@ static void test_expand_root_of_unity__fails_wrong_root_of_unity(void) {
 static void test_fft(void) {
     // TODO: Breaks with N=4096 or N=128 which are used in the protocol (see
     // issue 444)
-    const size_t N = 8192;
+    const uint64_t N = 8192;
     fr_t poly_eval[N];
     fr_t poly_coeff[N];
     fr_t recovered_poly_coeff[N];
 
     // Generate poly in coeff form
-    for (size_t i = 0; i < N; i++) {
+    for (uint64_t i = 0; i < N; i++) {
         get_rand_fr(&poly_coeff[i]);
     }
 
@@ -1696,7 +1696,7 @@ static void test_fft(void) {
     fr_fft(poly_eval, poly_coeff, N, &s);
 
     /* check: result of FFT are really the evaluations of the poly */
-    for (size_t i = 0; i < N; i++) {
+    for (uint64_t i = 0; i < N; i++) {
         fr_t individual_evaluation;
 
         eval_extended_poly(&individual_evaluation, poly_coeff, &s.roots_of_unity[i]);
@@ -1709,7 +1709,7 @@ static void test_fft(void) {
     fr_ifft(recovered_poly_coeff, poly_eval, N, &s);
 
     /* Check the end-to-end journey */
-    for (size_t i = 0; i < N; i++) {
+    for (uint64_t i = 0; i < N; i++) {
         bool ok = fr_equal(&poly_coeff[i], &recovered_poly_coeff[i]);
         ASSERT_EQUALS(ok, true);
     }
@@ -1718,13 +1718,13 @@ static void test_fft(void) {
 static void test_coset_fft(void) {
     // TODO: Breaks with N=4096 or N=128 which are used in the protocol (see
     // issue 444)
-    const size_t N = 8192;
+    const uint64_t N = 8192;
     fr_t poly_eval[N];
     fr_t poly_coeff[N];
     fr_t recovered_poly_coeff[N];
 
     // Generate poly in coeff form
-    for (size_t i = 0; i < N; i++) {
+    for (uint64_t i = 0; i < N; i++) {
         get_rand_fr(&poly_coeff[i]);
     }
 
@@ -1732,7 +1732,7 @@ static void test_coset_fft(void) {
     coset_fft(poly_eval, poly_coeff, N, &s);
 
     /* check: result of coset FFT are really the evaluations over the coset */
-    for (size_t i = 0; i < N; i++) {
+    for (uint64_t i = 0; i < N; i++) {
         fr_t shifted_w;
         fr_t individual_evaluation;
 
@@ -1748,7 +1748,7 @@ static void test_coset_fft(void) {
     coset_ifft(recovered_poly_coeff, poly_eval, N, &s);
 
     /* Check the end-to-end journey */
-    for (size_t i = 0; i < N; i++) {
+    for (uint64_t i = 0; i < N; i++) {
         bool ok = fr_equal(&poly_coeff[i], &recovered_poly_coeff[i]);
         ASSERT_EQUALS(ok, true);
     }
@@ -1761,7 +1761,7 @@ static void test_coset_fft(void) {
 static void test_deduplicate_commitments__one_duplicate(void) {
     Bytes48 commitments[4];
     uint64_t indices[4];
-    size_t count = 4;
+    uint64_t count = 4;
 
     memset(&commitments[0], 0, sizeof(Bytes48));
     memset(&commitments[1], 1, sizeof(Bytes48));
@@ -1780,7 +1780,7 @@ static void test_deduplicate_commitments__one_duplicate(void) {
 static void test_deduplicate_commitments__no_duplicates(void) {
     Bytes48 commitments[4];
     uint64_t indices[4];
-    size_t count = 4;
+    uint64_t count = 4;
 
     memset(&commitments[0], 0, sizeof(Bytes48));
     memset(&commitments[1], 1, sizeof(Bytes48));
@@ -1799,7 +1799,7 @@ static void test_deduplicate_commitments__no_duplicates(void) {
 static void test_deduplicate_commitments__all_duplicates(void) {
     Bytes48 commitments[4];
     uint64_t indices[4];
-    size_t count = 4;
+    uint64_t count = 4;
 
     memset(&commitments[0], 0, sizeof(Bytes48));
     memset(&commitments[1], 0, sizeof(Bytes48)); /* Duplicate */
@@ -1818,7 +1818,7 @@ static void test_deduplicate_commitments__all_duplicates(void) {
 static void test_deduplicate_commitments__no_commitments(void) {
     Bytes48 *commitments = NULL;
     uint64_t *indices = NULL;
-    size_t count = 0;
+    uint64_t count = 0;
 
     deduplicate_commitments(commitments, indices, &count);
 
@@ -1828,7 +1828,7 @@ static void test_deduplicate_commitments__no_commitments(void) {
 static void test_deduplicate_commitments__one_commitment(void) {
     Bytes48 commitments[1];
     uint64_t indices[1];
-    size_t count = 1;
+    uint64_t count = 1;
 
     memset(&commitments[0], 0, sizeof(Bytes48));
 
@@ -1891,7 +1891,7 @@ static void test_shift_factors__succeeds(void) {
 static void test_recover_cells_and_kzg_proofs__succeeds_random_blob(void) {
     C_KZG_RET ret;
     Blob blob;
-    const size_t num_partial_cells = CELLS_PER_EXT_BLOB / 2;
+    const uint64_t num_partial_cells = CELLS_PER_EXT_BLOB / 2;
     uint64_t cell_indices[CELLS_PER_EXT_BLOB];
     Cell cells[CELLS_PER_EXT_BLOB];
     Cell partial_cells[num_partial_cells];
@@ -1908,7 +1908,7 @@ static void test_recover_cells_and_kzg_proofs__succeeds_random_blob(void) {
     ASSERT_EQUALS(ret, C_KZG_OK);
 
     /* Erase half of the cells */
-    for (size_t i = 0; i < num_partial_cells; i++) {
+    for (uint64_t i = 0; i < num_partial_cells; i++) {
         cell_indices[i] = i * 2;
         memcpy(&partial_cells[i], &cells[cell_indices[i]], sizeof(Cell));
     }
@@ -1920,7 +1920,7 @@ static void test_recover_cells_and_kzg_proofs__succeeds_random_blob(void) {
     ASSERT_EQUALS(ret, C_KZG_OK);
 
     /* Check that all of the cells match */
-    for (size_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
+    for (uint64_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
         diff = memcmp(&cells[i], &recovered_cells[i], sizeof(Cell));
         ASSERT_EQUALS(diff, 0);
         diff = memcmp(&proofs[i], &recovered_proofs[i], sizeof(KZGProof));
@@ -1939,10 +1939,10 @@ static void test_compute_vanishing_polynomial_from_roots(void) {
     fr_t roots[2];
     fr_from_uint64(&roots[0], 2);
     fr_from_uint64(&roots[1], 3);
-    size_t roots_len = 2;
+    uint64_t roots_len = 2;
 
     fr_t poly[3];
-    size_t poly_len = 3;
+    uint64_t poly_len = 3;
 
     compute_vanishing_polynomial_from_roots(poly, &poly_len, roots, roots_len);
 
@@ -1970,7 +1970,7 @@ static void test_vanishing_polynomial_for_missing_cells(void) {
 
     /* Test case: the 0th and 1st cell are missing */
     uint64_t missing_cell_indices[] = {0, 1};
-    size_t len_missing_cells = 2;
+    uint64_t len_missing_cells = 2;
 
     ret = vanishing_polynomial_for_missing_cells(
         vanishing_poly, missing_cell_indices, len_missing_cells, &s
@@ -2018,7 +2018,7 @@ static void test_vanishing_polynomial_for_missing_cells(void) {
      * The last element for that cell index would have array index `127 + 128*63 = 8191`. This is
      * correct since `roots_of_unity` has 8192 elements.
      */
-    for (size_t i = 0; i < FIELD_ELEMENTS_PER_EXT_BLOB; i++) {
+    for (uint64_t i = 0; i < FIELD_ELEMENTS_PER_EXT_BLOB; i++) {
         if (i % CELLS_PER_EXT_BLOB == 1 || i % CELLS_PER_EXT_BLOB == 0) {
             /* Every CELLS_PER_EXT_BLOB-th evaluation should be zero */
             ASSERT("evaluation is zero", fr_is_zero(&fft_result[i]));
@@ -2054,7 +2054,7 @@ static void test_verify_cell_kzg_proof_batch__succeeds_random_blob(void) {
     ASSERT_EQUALS(ret, C_KZG_OK);
 
     /* Initialize list of commitments & cell indices */
-    for (size_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
+    for (uint64_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
         memcpy(commitments[i].bytes, &commitment, BYTES_PER_COMMITMENT);
         cell_indices[i] = i;
     }
@@ -2078,7 +2078,7 @@ static void profile_blob_to_kzg_commitment(void) {
     get_rand_blob(&blob);
 
     ProfilerStart("blob_to_kzg_commitment.prof");
-    for (size_t i = 0; i < 1000; i++) {
+    for (uint64_t i = 0; i < 1000; i++) {
         blob_to_kzg_commitment(&c, &blob, &s);
     }
     ProfilerStop();
@@ -2093,7 +2093,7 @@ static void profile_compute_kzg_proof(void) {
     get_rand_field_element(&z);
 
     ProfilerStart("compute_kzg_proof.prof");
-    for (size_t i = 0; i < 100; i++) {
+    for (uint64_t i = 0; i < 100; i++) {
         compute_kzg_proof(&proof_out, &y_out, &blob, &z, &s);
     }
     ProfilerStop();
@@ -2108,7 +2108,7 @@ static void profile_compute_blob_kzg_proof(void) {
     get_rand_g1_bytes(&commitment);
 
     ProfilerStart("compute_blob_kzg_proof.prof");
-    for (size_t i = 0; i < 10; i++) {
+    for (uint64_t i = 0; i < 10; i++) {
         compute_blob_kzg_proof(&out, &blob, &commitment, &s);
     }
     ProfilerStop();
@@ -2125,7 +2125,7 @@ static void profile_verify_kzg_proof(void) {
     get_rand_g1_bytes(&proof);
 
     ProfilerStart("verify_kzg_proof.prof");
-    for (size_t i = 0; i < 5000; i++) {
+    for (uint64_t i = 0; i < 5000; i++) {
         verify_kzg_proof(&out, &commitment, &z, &y, &proof, &s);
     }
     ProfilerStop();
@@ -2141,7 +2141,7 @@ static void profile_verify_blob_kzg_proof(void) {
     get_rand_g1_bytes(&proof);
 
     ProfilerStart("verify_blob_kzg_proof.prof");
-    for (size_t i = 0; i < 5000; i++) {
+    for (uint64_t i = 0; i < 5000; i++) {
         verify_blob_kzg_proof(&out, &blob, &commitment, &proof, &s);
     }
     ProfilerStop();
@@ -2154,14 +2154,14 @@ static void profile_verify_blob_kzg_proof_batch(void) {
     Bytes48 proofs[n];
     bool out;
 
-    for (size_t i = 0; i < n; i++) {
+    for (uint64_t i = 0; i < n; i++) {
         get_rand_blob(&blobs[i]);
         get_rand_g1_bytes(&commitments[i]);
         get_rand_g1_bytes(&proofs[i]);
     }
 
     ProfilerStart("verify_blob_kzg_proof_batch.prof");
-    for (size_t i = 0; i < 1000; i++) {
+    for (uint64_t i = 0; i < 1000; i++) {
         verify_blob_kzg_proof_batch(&out, blobs, commitments, proofs, n, &s);
     }
     ProfilerStop();
@@ -2176,7 +2176,7 @@ static void profile_compute_cells_and_kzg_proofs(void) {
     get_rand_blob(&blob);
 
     ProfilerStart("compute_cells_and_kzg_proofs.prof");
-    for (size_t i = 0; i < 5; i++) {
+    for (uint64_t i = 0; i < 5; i++) {
         compute_cells_and_kzg_proofs(cells, proofs, &blob, &s);
     }
     ProfilerStop();
@@ -2199,12 +2199,12 @@ static void profile_recover_cells_and_kzg_proofs(void) {
     compute_cells_and_kzg_proofs(cells, NULL, &blob, &s);
 
     /* Initialize cell indices */
-    for (size_t i = 0; i < CELLS_PER_EXT_BLOB / 2; i++) {
+    for (uint64_t i = 0; i < CELLS_PER_EXT_BLOB / 2; i++) {
         cell_indices[i] = i;
     }
 
     ProfilerStart("recover_cells_and_kzg_proofs.prof");
-    for (size_t i = 0; i < 5; i++) {
+    for (uint64_t i = 0; i < 5; i++) {
         recover_cells_and_kzg_proofs(cells, NULL, cell_indices, cells, CELLS_PER_EXT_BLOB / 2, &s);
     }
     ProfilerStop();
@@ -2231,13 +2231,13 @@ static void profile_verify_cell_kzg_proof_batch(void) {
     ret = compute_cells_and_kzg_proofs(cells, proofs, &blob, &s);
     ASSERT_EQUALS(ret, C_KZG_OK);
 
-    for (size_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
+    for (uint64_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
         memcpy(commitments[i].bytes, &commitment, BYTES_PER_COMMITMENT);
         cell_indices[i] = i;
     }
 
     ProfilerStart("verify_cell_kzg_proof_batch.prof");
-    for (size_t i = 0; i < 100; i++) {
+    for (uint64_t i = 0; i < 100; i++) {
         verify_cell_kzg_proof_batch(
             &ok, commitments, cell_indices, cells, proofs, CELLS_PER_EXT_BLOB, &s
         );

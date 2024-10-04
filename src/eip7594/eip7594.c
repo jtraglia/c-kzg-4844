@@ -44,7 +44,7 @@ static const char *RANDOM_CHALLENGE_DOMAIN_VERIFY_CELL_KZG_PROOF_BATCH = "RCKZGC
 /**
  * This is a precomputed map of cell index to reverse-bits-limited cell index.
  *
- * for (size_t i = 0; i < CELLS_PER_EXT_BLOB; i++)
+ * for (uint64_t i = 0; i < CELLS_PER_EXT_BLOB; i++)
  *   printf("%#04llx,\n", reverse_bits_limited(CELLS_PER_EXT_BLOB, i));
  *
  * Because of the way our evaluation domain is defined, we can use CELL_INDICES_RBL to find the
@@ -112,7 +112,7 @@ C_KZG_RET compute_cells_and_kzg_proofs(
     if (ret != C_KZG_OK) goto out;
 
     /* Ensure the upper half of the field elements are still zero */
-    for (size_t i = FIELD_ELEMENTS_PER_BLOB; i < FIELD_ELEMENTS_PER_EXT_BLOB; i++) {
+    for (uint64_t i = FIELD_ELEMENTS_PER_BLOB; i < FIELD_ELEMENTS_PER_EXT_BLOB; i++) {
         assert(fr_equal(&poly_monomial[i], &FR_ZERO));
     }
 
@@ -130,10 +130,10 @@ C_KZG_RET compute_cells_and_kzg_proofs(
         if (ret != C_KZG_OK) goto out;
 
         /* Convert all of the cells to byte-form */
-        for (size_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
-            for (size_t j = 0; j < FIELD_ELEMENTS_PER_CELL; j++) {
-                size_t index = i * FIELD_ELEMENTS_PER_CELL + j;
-                size_t offset = j * BYTES_PER_FIELD_ELEMENT;
+        for (uint64_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
+            for (uint64_t j = 0; j < FIELD_ELEMENTS_PER_CELL; j++) {
+                uint64_t index = i * FIELD_ELEMENTS_PER_CELL + j;
+                uint64_t offset = j * BYTES_PER_FIELD_ELEMENT;
                 bytes_from_bls_field((Bytes32 *)&cells[i].bytes[offset], &data_fr[index]);
             }
         }
@@ -153,7 +153,7 @@ C_KZG_RET compute_cells_and_kzg_proofs(
         if (ret != C_KZG_OK) goto out;
 
         /* Convert all of the proofs to byte-form */
-        for (size_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
+        for (uint64_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
             bytes_from_g1(&proofs[i], &proofs_g1[i]);
         }
     }
@@ -209,7 +209,7 @@ C_KZG_RET recover_cells_and_kzg_proofs(
     }
 
     /* Check that cell indices are valid */
-    for (size_t i = 0; i < num_cells; i++) {
+    for (uint64_t i = 0; i < num_cells; i++) {
         if (cell_indices[i] >= CELLS_PER_EXT_BLOB) {
             ret = C_KZG_BADARGS;
             goto out;
@@ -223,14 +223,14 @@ C_KZG_RET recover_cells_and_kzg_proofs(
     if (ret != C_KZG_OK) goto out;
 
     /* Initialize all cells as missing */
-    for (size_t i = 0; i < FIELD_ELEMENTS_PER_EXT_BLOB; i++) {
+    for (uint64_t i = 0; i < FIELD_ELEMENTS_PER_EXT_BLOB; i++) {
         recovered_cells_fr[i] = FR_NULL;
     }
 
     /* Populate recovered_cells_fr with available cells at the right places */
-    for (size_t i = 0; i < num_cells; i++) {
-        size_t index = cell_indices[i] * FIELD_ELEMENTS_PER_CELL;
-        for (size_t j = 0; j < FIELD_ELEMENTS_PER_CELL; j++) {
+    for (uint64_t i = 0; i < num_cells; i++) {
+        uint64_t index = cell_indices[i] * FIELD_ELEMENTS_PER_CELL;
+        for (uint64_t j = 0; j < FIELD_ELEMENTS_PER_CELL; j++) {
             fr_t *ptr = &recovered_cells_fr[index + j];
 
             /*
@@ -244,7 +244,7 @@ C_KZG_RET recover_cells_and_kzg_proofs(
             }
 
             /* Convert the untrusted input bytes to a field element */
-            size_t offset = j * BYTES_PER_FIELD_ELEMENT;
+            uint64_t offset = j * BYTES_PER_FIELD_ELEMENT;
             ret = bytes_to_bls_field(ptr, (const Bytes32 *)&cells[i].bytes[offset]);
             if (ret != C_KZG_OK) goto out;
         }
@@ -259,10 +259,10 @@ C_KZG_RET recover_cells_and_kzg_proofs(
         if (ret != C_KZG_OK) goto out;
 
         /* Convert the recovered data points to byte-form */
-        for (size_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
-            for (size_t j = 0; j < FIELD_ELEMENTS_PER_CELL; j++) {
-                size_t index = i * FIELD_ELEMENTS_PER_CELL + j;
-                size_t offset = j * BYTES_PER_FIELD_ELEMENT;
+        for (uint64_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
+            for (uint64_t j = 0; j < FIELD_ELEMENTS_PER_CELL; j++) {
+                uint64_t index = i * FIELD_ELEMENTS_PER_CELL + j;
+                uint64_t offset = j * BYTES_PER_FIELD_ELEMENT;
                 bytes_from_bls_field(
                     (Bytes32 *)&recovered_cells[i].bytes[offset], &recovered_cells_fr[index]
                 );
@@ -290,7 +290,7 @@ C_KZG_RET recover_cells_and_kzg_proofs(
         if (ret != C_KZG_OK) goto out;
 
         /* Convert all of the proofs to byte-form */
-        for (size_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
+        for (uint64_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
             bytes_from_g1(&recovered_proofs[i], &recovered_proofs_g1[i]);
         }
     }
@@ -341,19 +341,19 @@ static void commitments_copy(Bytes48 *dst, const Bytes48 *src) {
  * @remark `count_out` is updated to be the number of unique commitments.
  */
 static void deduplicate_commitments(
-    Bytes48 *commitments_out, uint64_t *indices_out, size_t *count_out
+    Bytes48 *commitments_out, uint64_t *indices_out, uint64_t *count_out
 ) {
     /* Bail early if there are no commitments */
     if (*count_out == 0) return;
 
     /* The first commitment is always new */
     indices_out[0] = 0;
-    size_t new_count = 1;
+    uint64_t new_count = 1;
 
     /* Create list of unique commitments & indices to them */
-    for (size_t i = 1; i < *count_out; i++) {
+    for (uint64_t i = 1; i < *count_out; i++) {
         bool exist = false;
-        for (size_t j = 0; j < new_count; j++) {
+        for (uint64_t j = 0; j < new_count; j++) {
             if (commitments_equal(&commitments_out[i], &commitments_out[j])) {
                 /* This commitment already exists */
                 indices_out[i] = j;
@@ -389,7 +389,7 @@ static void deduplicate_commitments(
 static C_KZG_RET compute_r_powers_for_verify_cell_kzg_proof_batch(
     fr_t *r_powers_out,
     const Bytes48 *commitments_bytes,
-    size_t num_commitments,
+    uint64_t num_commitments,
     const uint64_t *commitment_indices,
     const uint64_t *cell_indices,
     const Cell *cells,
@@ -402,15 +402,15 @@ static C_KZG_RET compute_r_powers_for_verify_cell_kzg_proof_batch(
     fr_t r;
 
     /* Calculate the size of the data we're going to hash */
-    size_t input_size = DOMAIN_STR_LENGTH                          /* The domain separator */
-                        + sizeof(uint64_t)                         /* FIELD_ELEMENTS_PER_CELL */
-                        + sizeof(uint64_t)                         /* num_commitments */
-                        + sizeof(uint64_t)                         /* num_cells */
-                        + (num_commitments * BYTES_PER_COMMITMENT) /* commitment_bytes */
-                        + (num_cells * sizeof(uint64_t))           /* commitment_indices */
-                        + (num_cells * sizeof(uint64_t))           /* cell_indices */
-                        + (num_cells * BYTES_PER_CELL)             /* cells */
-                        + (num_cells * BYTES_PER_PROOF);           /* proofs_bytes */
+    uint64_t input_size = DOMAIN_STR_LENGTH                          /* The domain separator */
+                          + sizeof(uint64_t)                         /* FIELD_ELEMENTS_PER_CELL */
+                          + sizeof(uint64_t)                         /* num_commitments */
+                          + sizeof(uint64_t)                         /* num_cells */
+                          + (num_commitments * BYTES_PER_COMMITMENT) /* commitment_bytes */
+                          + (num_cells * sizeof(uint64_t))           /* commitment_indices */
+                          + (num_cells * sizeof(uint64_t))           /* cell_indices */
+                          + (num_cells * BYTES_PER_CELL)             /* cells */
+                          + (num_cells * BYTES_PER_PROOF);           /* proofs_bytes */
 
     /* Allocate space to copy this data into */
     ret = c_kzg_malloc((void **)&bytes, input_size);
@@ -438,13 +438,13 @@ static C_KZG_RET compute_r_powers_for_verify_cell_kzg_proof_batch(
     bytes_from_uint64(offset, num_cells);
     offset += sizeof(uint64_t);
 
-    for (size_t i = 0; i < num_commitments; i++) {
+    for (uint64_t i = 0; i < num_commitments; i++) {
         /* Copy commitment */
         memcpy(offset, &commitments_bytes[i], BYTES_PER_COMMITMENT);
         offset += BYTES_PER_COMMITMENT;
     }
 
-    for (size_t i = 0; i < num_cells; i++) {
+    for (uint64_t i = 0; i < num_cells; i++) {
         /* Copy row id */
         bytes_from_uint64(offset, commitment_indices[i]);
         offset += sizeof(uint64_t);
@@ -492,7 +492,7 @@ static C_KZG_RET compute_weighted_sum_of_commitments(
     const Bytes48 *unique_commitments,
     const uint64_t *commitment_indices,
     const fr_t *r_powers,
-    size_t num_commitments,
+    uint64_t num_commitments,
     uint64_t num_cells
 ) {
     C_KZG_RET ret;
@@ -504,7 +504,7 @@ static C_KZG_RET compute_weighted_sum_of_commitments(
     ret = new_g1_array(&commitments_g1, num_commitments);
     if (ret != C_KZG_OK) goto out;
 
-    for (size_t i = 0; i < num_commitments; i++) {
+    for (uint64_t i = 0; i < num_commitments; i++) {
         /* Convert & validate commitment */
         ret = bytes_to_kzg_commitment(&commitments_g1[i], &unique_commitments[i]);
         if (ret != C_KZG_OK) goto out;
@@ -640,9 +640,9 @@ static C_KZG_RET compute_commitment_to_aggregated_interpolation_poly(
     ////////////////////////////////////////////////////////////////////////////////////////////////
 
     /* Start with zeroed out columns */
-    for (size_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
-        for (size_t j = 0; j < FIELD_ELEMENTS_PER_CELL; j++) {
-            size_t index = i * FIELD_ELEMENTS_PER_CELL + j;
+    for (uint64_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
+        for (uint64_t j = 0; j < FIELD_ELEMENTS_PER_CELL; j++) {
+            uint64_t index = i * FIELD_ELEMENTS_PER_CELL + j;
             aggregated_column_cells[index] = FR_ZERO;
         }
     }
@@ -658,11 +658,11 @@ static C_KZG_RET compute_commitment_to_aggregated_interpolation_poly(
         uint64_t column_index = cell_indices[cell_index];
 
         /* Iterate over every field element of this cell: scale it and aggregate it */
-        for (size_t fr_index = 0; fr_index < FIELD_ELEMENTS_PER_CELL; fr_index++) {
+        for (uint64_t fr_index = 0; fr_index < FIELD_ELEMENTS_PER_CELL; fr_index++) {
             fr_t original_fr, scaled_fr;
 
             /* Get the field element at this offset */
-            size_t offset = fr_index * BYTES_PER_FIELD_ELEMENT;
+            uint64_t offset = fr_index * BYTES_PER_FIELD_ELEMENT;
             ret = bytes_to_bls_field(
                 &original_fr, (const Bytes32 *)&cells[cell_index].bytes[offset]
             );
@@ -672,7 +672,7 @@ static C_KZG_RET compute_commitment_to_aggregated_interpolation_poly(
             blst_fr_mul(&scaled_fr, &original_fr, &r_powers[cell_index]);
 
             /* Figure out the right index for this field element within the extended array */
-            size_t array_index = column_index * FIELD_ELEMENTS_PER_CELL + fr_index;
+            uint64_t array_index = column_index * FIELD_ELEMENTS_PER_CELL + fr_index;
             /* Aggregate the scaled field element into the array */
             blst_fr_add(
                 &aggregated_column_cells[array_index],
@@ -687,7 +687,7 @@ static C_KZG_RET compute_commitment_to_aggregated_interpolation_poly(
     ////////////////////////////////////////////////////////////////////////////////////////////////
 
     /* Start with false values */
-    for (size_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
+    for (uint64_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
         is_cell_used[i] = false;
     }
 
@@ -701,17 +701,17 @@ static C_KZG_RET compute_commitment_to_aggregated_interpolation_poly(
     ////////////////////////////////////////////////////////////////////////////////////////////////
 
     /* Start with a zeroed out poly */
-    for (size_t i = 0; i < FIELD_ELEMENTS_PER_CELL; i++) {
+    for (uint64_t i = 0; i < FIELD_ELEMENTS_PER_CELL; i++) {
         aggregated_interpolation_poly[i] = FR_ZERO;
     }
 
     /* Interpolate each column */
-    for (size_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
+    for (uint64_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
         /* We can skip columns without any cells */
         if (!is_cell_used[i]) continue;
 
         /* Offset to the first cell for this column */
-        size_t index = i * FIELD_ELEMENTS_PER_CELL;
+        uint64_t index = i * FIELD_ELEMENTS_PER_CELL;
 
         /*
          * Reach into the big array and permute the right column.
@@ -738,7 +738,7 @@ static C_KZG_RET compute_commitment_to_aggregated_interpolation_poly(
         shift_poly(column_interpolation_poly, FIELD_ELEMENTS_PER_CELL, &inv_coset_factor);
 
         /* Update the aggregated poly */
-        for (size_t k = 0; k < FIELD_ELEMENTS_PER_CELL; k++) {
+        for (uint64_t k = 0; k < FIELD_ELEMENTS_PER_CELL; k++) {
             blst_fr_add(
                 &aggregated_interpolation_poly[k],
                 &aggregated_interpolation_poly[k],
@@ -833,7 +833,7 @@ C_KZG_RET verify_cell_kzg_proof_batch(
     g1_t proof_lincomb;
     g1_t weighted_sum_of_proofs;
     g2_t power_of_s = s->g2_values_monomial[FIELD_ELEMENTS_PER_CELL];
-    size_t num_commitments;
+    uint64_t num_commitments;
 
     /* Arrays */
     Bytes48 *unique_commitments = NULL;
@@ -853,7 +853,7 @@ C_KZG_RET verify_cell_kzg_proof_batch(
     // Sanity checks
     ////////////////////////////////////////////////////////////////////////////////////////////////
 
-    for (size_t i = 0; i < num_cells; i++) {
+    for (uint64_t i = 0; i < num_cells; i++) {
         /* Make sure column index is valid */
         if (cell_indices[i] >= CELLS_PER_EXT_BLOB) return C_KZG_BADARGS;
     }
@@ -906,7 +906,7 @@ C_KZG_RET verify_cell_kzg_proof_batch(
     if (ret != C_KZG_OK) goto out;
 
     /* There should be a proof for each cell */
-    for (size_t i = 0; i < num_cells; i++) {
+    for (uint64_t i = 0; i < num_cells; i++) {
         ret = bytes_to_kzg_proof(&proofs_g1[i], &proofs_bytes[i]);
         if (ret != C_KZG_OK) goto out;
     }

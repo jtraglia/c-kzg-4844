@@ -44,7 +44,7 @@
  * @remark The `poly` array must be at least `roots_len + 1` in length.
  */
 static C_KZG_RET compute_vanishing_polynomial_from_roots(
-    fr_t *poly, size_t *poly_len, const fr_t *roots, size_t roots_len
+    fr_t *poly, uint64_t *poly_len, const fr_t *roots, uint64_t roots_len
 ) {
     fr_t neg_root;
 
@@ -55,13 +55,13 @@ static C_KZG_RET compute_vanishing_polynomial_from_roots(
     /* Initialize with -root[0] */
     blst_fr_cneg(&poly[0], &roots[0], true);
 
-    for (size_t i = 1; i < roots_len; i++) {
+    for (uint64_t i = 1; i < roots_len; i++) {
         blst_fr_cneg(&neg_root, &roots[i], true);
 
         poly[i] = neg_root;
         blst_fr_add(&poly[i], &poly[i], &poly[i - 1]);
 
-        for (size_t j = i - 1; j > 0; j--) {
+        for (uint64_t j = i - 1; j > 0; j--) {
             blst_fr_mul(&poly[j], &poly[j], &neg_root);
             blst_fr_add(&poly[j], &poly[j], &poly[j - 1]);
         }
@@ -93,13 +93,13 @@ static C_KZG_RET compute_vanishing_polynomial_from_roots(
 static C_KZG_RET vanishing_polynomial_for_missing_cells(
     fr_t *vanishing_poly,
     const uint64_t *missing_cell_indices,
-    size_t len_missing_cells,
+    uint64_t len_missing_cells,
     const KZGSettings *s
 ) {
     C_KZG_RET ret;
     fr_t *roots = NULL;
     fr_t *short_vanishing_poly = NULL;
-    size_t short_vanishing_poly_len = 0;
+    uint64_t short_vanishing_poly_len = 0;
 
     /* Return early if none or all of the cells are missing */
     if (len_missing_cells == 0 || len_missing_cells >= CELLS_PER_EXT_BLOB) {
@@ -120,8 +120,8 @@ static C_KZG_RET vanishing_polynomial_for_missing_cells(
      * In other words, if the missing index is `i`, then we add \omega^i to the roots array, where
      * \omega is a primitive `CELLS_PER_EXT_BLOB` root of unity.
      */
-    size_t stride = FIELD_ELEMENTS_PER_EXT_BLOB / CELLS_PER_EXT_BLOB;
-    for (size_t i = 0; i < len_missing_cells; i++) {
+    uint64_t stride = FIELD_ELEMENTS_PER_EXT_BLOB / CELLS_PER_EXT_BLOB;
+    for (uint64_t i = 0; i < len_missing_cells; i++) {
         roots[i] = s->roots_of_unity[missing_cell_indices[i] * stride];
     }
 
@@ -132,7 +132,7 @@ static C_KZG_RET vanishing_polynomial_for_missing_cells(
     if (ret != C_KZG_OK) goto out;
 
     /* Zero out all the coefficients of the output poly */
-    for (size_t i = 0; i < FIELD_ELEMENTS_PER_EXT_BLOB; i++) {
+    for (uint64_t i = 0; i < FIELD_ELEMENTS_PER_EXT_BLOB; i++) {
         vanishing_poly[i] = FR_ZERO;
     }
 
@@ -151,7 +151,7 @@ static C_KZG_RET vanishing_polynomial_for_missing_cells(
      * This is done by shifting the degree of all coefficients in `short_vanishing_poly` up by
      * `FIELD_ELEMENTS_PER_CELL` amount.
      */
-    for (size_t i = 0; i < short_vanishing_poly_len; i++) {
+    for (uint64_t i = 0; i < short_vanishing_poly_len; i++) {
         vanishing_poly[i * FIELD_ELEMENTS_PER_CELL] = short_vanishing_poly[i];
     }
 
@@ -174,8 +174,8 @@ out:
  *
  * @return True if the value is in the array, otherwise false.
  */
-static bool is_in_array(const uint64_t *arr, size_t arr_size, uint64_t value) {
-    for (size_t i = 0; i < arr_size; i++) {
+static bool is_in_array(const uint64_t *arr, uint64_t arr_size, uint64_t value) {
+    for (uint64_t i = 0; i < arr_size; i++) {
         if (arr[i] == value) {
             return true;
         }
@@ -201,7 +201,7 @@ static bool is_in_array(const uint64_t *arr, size_t arr_size, uint64_t value) {
 C_KZG_RET recover_cells(
     fr_t *reconstructed_data_out,
     const uint64_t *cell_indices,
-    size_t num_cells,
+    uint64_t num_cells,
     fr_t *cells,
     const KZGSettings *s
 ) {
@@ -244,8 +244,8 @@ C_KZG_RET recover_cells(
     if (ret != C_KZG_OK) goto out;
 
     /* Identify missing cells */
-    size_t len_missing = 0;
-    for (size_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
+    uint64_t len_missing = 0;
+    for (uint64_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
         /* Iterate over each cell index and check if we have received it */
         if (!is_in_array(cell_indices, num_cells, i)) {
             /* If the cell is missing, bit reverse the index and add it to the missing array */
@@ -276,7 +276,7 @@ C_KZG_RET recover_cells(
      * Note: over the FFT domain, the polynomials (E*Z)(x) and (P*Z)(x) agree, where
      * P(x) is the polynomial we want to reconstruct (degree FIELD_ELEMENTS_PER_BLOB - 1).
      */
-    for (size_t i = 0; i < FIELD_ELEMENTS_PER_EXT_BLOB; i++) {
+    for (uint64_t i = 0; i < FIELD_ELEMENTS_PER_EXT_BLOB; i++) {
         if (fr_is_null(&cells_brp[i])) {
             /*
              * We handle this situation differently because FR_NULL is an invalid value. The right
@@ -327,7 +327,7 @@ C_KZG_RET recover_cells(
     if (ret != C_KZG_OK) goto out;
 
     /* Compute P(x) = (P*Z)(x) / Z(x) in evaluation form over a coset of the FFT domain */
-    for (size_t i = 0; i < FIELD_ELEMENTS_PER_EXT_BLOB; i++) {
+    for (uint64_t i = 0; i < FIELD_ELEMENTS_PER_EXT_BLOB; i++) {
         fr_div(
             &extended_evaluations_over_coset[i],
             &extended_evaluations_over_coset[i],

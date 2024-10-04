@@ -71,7 +71,7 @@
  * fr_t root_of_unity;
  * uint64_t values[4] = <output-from-python>;
  * blst_fr_from_uint64(&root_of_unity, values);
- * for (size_t i = 0; i < 4; i++)
+ * for (uint64_t i = 0; i < 4; i++)
  *     printf("%#018llxL,\n", root_of_unity.l[i]);
  * @endcode
  */
@@ -93,8 +93,8 @@ static const fr_t ROOT_OF_UNITY = {
  * @remark `root` must be such that `root ^ width` is equal to one, but no smaller power of `root`
  * is equal to one.
  */
-static C_KZG_RET expand_root_of_unity(fr_t *out, const fr_t *root, size_t width) {
-    size_t i;
+static C_KZG_RET expand_root_of_unity(fr_t *out, const fr_t *root, uint64_t width) {
+    uint64_t i;
 
     /* We assume it's at least two */
     if (width < 2) {
@@ -141,7 +141,7 @@ static C_KZG_RET compute_roots_of_unity(KZGSettings *s) {
     if (ret != C_KZG_OK) goto out;
 
     /* Populate reverse roots of unity */
-    for (size_t i = 0; i <= FIELD_ELEMENTS_PER_EXT_BLOB; i++) {
+    for (uint64_t i = 0; i <= FIELD_ELEMENTS_PER_EXT_BLOB; i++) {
         s->reverse_roots_of_unity[i] = s->roots_of_unity[FIELD_ELEMENTS_PER_EXT_BLOB - i];
     }
 
@@ -171,12 +171,12 @@ void free_trusted_setup(KZGSettings *s) {
      * possible for there to be a segmentation fault via null pointer dereference.
      */
     if (s->x_ext_fft_columns != NULL) {
-        for (size_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
+        for (uint64_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
             c_kzg_free(s->x_ext_fft_columns[i]);
         }
     }
     if (s->tables != NULL) {
-        for (size_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
+        for (uint64_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
             c_kzg_free(s->tables[i]);
         }
     }
@@ -195,9 +195,9 @@ void free_trusted_setup(KZGSettings *s) {
  * @param[in]   n   The length of the input vector x
  * @param[in]   s   The trusted setup
  */
-static C_KZG_RET toeplitz_part_1(g1_t *out, const g1_t *x, size_t n, const KZGSettings *s) {
+static C_KZG_RET toeplitz_part_1(g1_t *out, const g1_t *x, uint64_t n, const KZGSettings *s) {
     C_KZG_RET ret;
-    size_t n2 = n * 2;
+    uint64_t n2 = n * 2;
     g1_t *x_ext;
 
     /* Create extended array of points */
@@ -205,10 +205,10 @@ static C_KZG_RET toeplitz_part_1(g1_t *out, const g1_t *x, size_t n, const KZGSe
     if (ret != C_KZG_OK) goto out;
 
     /* Copy x & extend with zero */
-    for (size_t i = 0; i < n; i++) {
+    for (uint64_t i = 0; i < n; i++) {
         x_ext[i] = x[i];
     }
-    for (size_t i = n; i < n2; i++) {
+    for (uint64_t i = n; i < n2; i++) {
         x_ext[i] = G1_IDENTITY;
     }
 
@@ -228,7 +228,7 @@ out:
  */
 static C_KZG_RET init_fk20_multi_settings(KZGSettings *s) {
     C_KZG_RET ret;
-    size_t n, k, k2;
+    uint64_t n, k, k2;
     g1_t *x = NULL;
     g1_t *points = NULL;
     blst_p1_affine *p_affine = NULL;
@@ -252,16 +252,16 @@ static C_KZG_RET init_fk20_multi_settings(KZGSettings *s) {
     /* Allocate space for array of pointers, this is a 2D array */
     ret = c_kzg_calloc((void **)&s->x_ext_fft_columns, k2, sizeof(void *));
     if (ret != C_KZG_OK) goto out;
-    for (size_t i = 0; i < k2; i++) {
+    for (uint64_t i = 0; i < k2; i++) {
         ret = new_g1_array(&s->x_ext_fft_columns[i], FIELD_ELEMENTS_PER_CELL);
         if (ret != C_KZG_OK) goto out;
     }
 
-    for (size_t offset = 0; offset < FIELD_ELEMENTS_PER_CELL; offset++) {
+    for (uint64_t offset = 0; offset < FIELD_ELEMENTS_PER_CELL; offset++) {
         /* Compute x, sections of the g1 values */
-        size_t start = n - FIELD_ELEMENTS_PER_CELL - 1 - offset;
-        for (size_t i = 0; i < k - 1; i++) {
-            size_t j = start - i * FIELD_ELEMENTS_PER_CELL;
+        uint64_t start = n - FIELD_ELEMENTS_PER_CELL - 1 - offset;
+        for (uint64_t i = 0; i < k - 1; i++) {
+            uint64_t j = start - i * FIELD_ELEMENTS_PER_CELL;
             x[i] = s->g1_values_monomial[j];
         }
         x[k - 1] = G1_IDENTITY;
@@ -271,7 +271,7 @@ static C_KZG_RET init_fk20_multi_settings(KZGSettings *s) {
         if (ret != C_KZG_OK) goto out;
 
         /* Reorganize from rows into columns */
-        for (size_t row = 0; row < k2; row++) {
+        for (uint64_t row = 0; row < k2; row++) {
             s->x_ext_fft_columns[row][offset] = points[row];
         }
     }
@@ -286,11 +286,11 @@ static C_KZG_RET init_fk20_multi_settings(KZGSettings *s) {
         if (ret != C_KZG_OK) goto out;
 
         /* Calculate the size of each table, this can be re-used */
-        size_t table_size = blst_p1s_mult_wbits_precompute_sizeof(
+        uint64_t table_size = blst_p1s_mult_wbits_precompute_sizeof(
             s->wbits, FIELD_ELEMENTS_PER_CELL
         );
 
-        for (size_t i = 0; i < k2; i++) {
+        for (uint64_t i = 0; i < k2; i++) {
             /* Transform the points to affine representation */
             const blst_p1 *p_arg[2] = {s->x_ext_fft_columns[i], NULL};
             blst_p1s_to_affine(p_affine, p_arg, FIELD_ELEMENTS_PER_CELL);
@@ -324,7 +324,7 @@ out:
  * @param[in]   n1  Number of G1 points in the trusted setup
  * @param[in]   n2  Number of G2 points in the trusted setup
  */
-static C_KZG_RET is_trusted_setup_in_lagrange_form(const KZGSettings *s, size_t n1, size_t n2) {
+static C_KZG_RET is_trusted_setup_in_lagrange_form(const KZGSettings *s, uint64_t n1, uint64_t n2) {
     /* Trusted setup is too small; we can't work with this */
     if (n1 < 2 || n2 < 2) {
         return C_KZG_BADARGS;
@@ -417,7 +417,7 @@ C_KZG_RET load_trusted_setup(
     if (ret != C_KZG_OK) goto out_error;
 
     /* Convert all g1 monomial bytes to g1 points */
-    for (size_t i = 0; i < NUM_G1_POINTS; i++) {
+    for (uint64_t i = 0; i < NUM_G1_POINTS; i++) {
         blst_p1_affine g1_affine;
         BLST_ERROR err = blst_p1_uncompress(&g1_affine, &g1_monomial_bytes[BYTES_PER_G1 * i]);
         if (err != BLST_SUCCESS) {
@@ -428,7 +428,7 @@ C_KZG_RET load_trusted_setup(
     }
 
     /* Convert all g1 Lagrange bytes to g1 points */
-    for (size_t i = 0; i < NUM_G1_POINTS; i++) {
+    for (uint64_t i = 0; i < NUM_G1_POINTS; i++) {
         blst_p1_affine g1_affine;
         BLST_ERROR err = blst_p1_uncompress(&g1_affine, &g1_lagrange_bytes[BYTES_PER_G1 * i]);
         if (err != BLST_SUCCESS) {
@@ -439,7 +439,7 @@ C_KZG_RET load_trusted_setup(
     }
 
     /* Convert all g2 bytes to g2 points */
-    for (size_t i = 0; i < NUM_G2_POINTS; i++) {
+    for (uint64_t i = 0; i < NUM_G2_POINTS; i++) {
         blst_p2_affine g2_affine;
         BLST_ERROR err = blst_p2_uncompress(&g2_affine, &g2_monomial_bytes[BYTES_PER_G2 * i]);
         if (err != BLST_SUCCESS) {
@@ -521,7 +521,7 @@ C_KZG_RET load_trusted_setup_file(KZGSettings *out, FILE *in, uint64_t precomput
     }
 
     /* Read all of the g1 points in Lagrange form, byte by byte */
-    for (size_t i = 0; i < NUM_G1_POINTS * BYTES_PER_G1; i++) {
+    for (uint64_t i = 0; i < NUM_G1_POINTS * BYTES_PER_G1; i++) {
         num_matches = fscanf(in, "%2hhx", &g1_lagrange_bytes[i]);
         if (num_matches != 1) {
             ret = C_KZG_BADARGS;
@@ -530,7 +530,7 @@ C_KZG_RET load_trusted_setup_file(KZGSettings *out, FILE *in, uint64_t precomput
     }
 
     /* Read all of the g2 points in monomial form, byte by byte */
-    for (size_t i = 0; i < NUM_G2_POINTS * BYTES_PER_G2; i++) {
+    for (uint64_t i = 0; i < NUM_G2_POINTS * BYTES_PER_G2; i++) {
         num_matches = fscanf(in, "%2hhx", &g2_monomial_bytes[i]);
         if (num_matches != 1) {
             ret = C_KZG_BADARGS;
@@ -540,7 +540,7 @@ C_KZG_RET load_trusted_setup_file(KZGSettings *out, FILE *in, uint64_t precomput
 
     /* Read all of the g1 points in monomial form, byte by byte */
     /* Note: this is last because it is an extension for EIP-7594 */
-    for (size_t i = 0; i < NUM_G1_POINTS * BYTES_PER_G1; i++) {
+    for (uint64_t i = 0; i < NUM_G1_POINTS * BYTES_PER_G1; i++) {
         num_matches = fscanf(in, "%2hhx", &g1_monomial_bytes[i]);
         if (num_matches != 1) {
             ret = C_KZG_BADARGS;

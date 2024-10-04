@@ -31,7 +31,7 @@
  *
  *   fr_t a;
  *   fr_from_uint64(&a, 7);
- *   for (size_t i = 0; i < 4; i++)
+ *   for (uint64_t i = 0; i < 4; i++)
  *       printf("%#018llxL,\n", a.l[i]);
  */
 static const fr_t RECOVERY_SHIFT_FACTOR = {
@@ -44,7 +44,7 @@ static const fr_t RECOVERY_SHIFT_FACTOR = {
  *   fr_t a;
  *   fr_from_uint64(&a, 7);
  *   fr_div(&a, &FR_ONE, &a);
- *   for (size_t i = 0; i < 4; i++)
+ *   for (uint64_t i = 0; i < 4; i++)
  *       printf("%#018llxL,\n", a.l[i]);
  */
 static const fr_t INV_RECOVERY_SHIFT_FACTOR = {
@@ -68,14 +68,14 @@ static const fr_t INV_RECOVERY_SHIFT_FACTOR = {
  * @param[in]   n               Length of the FFT, must be a power of two
  */
 static void fr_fft_fast(
-    fr_t *out, const fr_t *in, size_t stride, const fr_t *roots, size_t roots_stride, size_t n
+    fr_t *out, const fr_t *in, uint64_t stride, const fr_t *roots, uint64_t roots_stride, uint64_t n
 ) {
-    size_t half = n / 2;
+    uint64_t half = n / 2;
     if (half > 0) {
         fr_t y_times_root;
         fr_fft_fast(out, in, stride * 2, roots, roots_stride * 2, half);
         fr_fft_fast(out + half, in + stride, stride * 2, roots, roots_stride * 2, half);
-        for (size_t i = 0; i < half; i++) {
+        for (uint64_t i = 0; i < half; i++) {
             blst_fr_mul(&y_times_root, &out[i + half], &roots[i * roots_stride]);
             blst_fr_sub(&out[i + half], &out[i], &y_times_root);
             blst_fr_add(&out[i], &out[i], &y_times_root);
@@ -97,7 +97,7 @@ static void fr_fft_fast(
  * @remark The array lengths must be a power of two.
  * @remark Use fr_ifft() for inverse transformation.
  */
-C_KZG_RET fr_fft(fr_t *out, const fr_t *in, size_t n, const KZGSettings *s) {
+C_KZG_RET fr_fft(fr_t *out, const fr_t *in, uint64_t n, const KZGSettings *s) {
     /* Handle zero length input */
     if (n == 0) return C_KZG_OK;
 
@@ -106,7 +106,7 @@ C_KZG_RET fr_fft(fr_t *out, const fr_t *in, size_t n, const KZGSettings *s) {
         return C_KZG_BADARGS;
     }
 
-    size_t roots_stride = FIELD_ELEMENTS_PER_EXT_BLOB / n;
+    uint64_t roots_stride = FIELD_ELEMENTS_PER_EXT_BLOB / n;
     fr_fft_fast(out, in, 1, s->roots_of_unity, roots_stride, n);
 
     return C_KZG_OK;
@@ -124,7 +124,7 @@ C_KZG_RET fr_fft(fr_t *out, const fr_t *in, size_t n, const KZGSettings *s) {
  * @remark The array lengths must be a power of two.
  * @remark Use fr_fft() for forward transformation.
  */
-C_KZG_RET fr_ifft(fr_t *out, const fr_t *in, size_t n, const KZGSettings *s) {
+C_KZG_RET fr_ifft(fr_t *out, const fr_t *in, uint64_t n, const KZGSettings *s) {
     /* Handle zero length input */
     if (n == 0) return C_KZG_OK;
 
@@ -133,13 +133,13 @@ C_KZG_RET fr_ifft(fr_t *out, const fr_t *in, size_t n, const KZGSettings *s) {
         return C_KZG_BADARGS;
     }
 
-    size_t stride = FIELD_ELEMENTS_PER_EXT_BLOB / n;
+    uint64_t stride = FIELD_ELEMENTS_PER_EXT_BLOB / n;
     fr_fft_fast(out, in, 1, s->reverse_roots_of_unity, stride, n);
 
     fr_t inv_n;
     fr_from_uint64(&inv_n, n);
     blst_fr_eucl_inverse(&inv_n, &inv_n);
-    for (size_t i = 0; i < n; i++) {
+    for (uint64_t i = 0; i < n; i++) {
         blst_fr_mul(&out[i], &out[i], &inv_n);
     }
     return C_KZG_OK;
@@ -162,14 +162,14 @@ C_KZG_RET fr_ifft(fr_t *out, const fr_t *in, size_t n, const KZGSettings *s) {
  * @param[in]   n               Length of the FFT, must be a power of two
  */
 static void g1_fft_fast(
-    g1_t *out, const g1_t *in, size_t stride, const fr_t *roots, size_t roots_stride, size_t n
+    g1_t *out, const g1_t *in, uint64_t stride, const fr_t *roots, uint64_t roots_stride, uint64_t n
 ) {
     g1_t y_times_root;
-    size_t half = n / 2;
+    uint64_t half = n / 2;
     if (half > 0) { /* Tunable parameter */
         g1_fft_fast(out, in, stride * 2, roots, roots_stride * 2, half);
         g1_fft_fast(out + half, in + stride, stride * 2, roots, roots_stride * 2, half);
-        for (size_t i = 0; i < half; i++) {
+        for (uint64_t i = 0; i < half; i++) {
             /* If the scalar is one, we can skip the multiplication */
             if (fr_is_one(&roots[i * roots_stride])) {
                 y_times_root = out[i + half];
@@ -196,7 +196,7 @@ static void g1_fft_fast(
  * @remark The array lengths must be a power of two.
  * @remark Use g1_ifft() for inverse transformation.
  */
-C_KZG_RET g1_fft(g1_t *out, const g1_t *in, size_t n, const KZGSettings *s) {
+C_KZG_RET g1_fft(g1_t *out, const g1_t *in, uint64_t n, const KZGSettings *s) {
     /* Handle zero length input */
     if (n == 0) return C_KZG_OK;
 
@@ -205,7 +205,7 @@ C_KZG_RET g1_fft(g1_t *out, const g1_t *in, size_t n, const KZGSettings *s) {
         return C_KZG_BADARGS;
     }
 
-    size_t roots_stride = FIELD_ELEMENTS_PER_EXT_BLOB / n;
+    uint64_t roots_stride = FIELD_ELEMENTS_PER_EXT_BLOB / n;
     g1_fft_fast(out, in, 1, s->roots_of_unity, roots_stride, n);
 
     return C_KZG_OK;
@@ -223,7 +223,7 @@ C_KZG_RET g1_fft(g1_t *out, const g1_t *in, size_t n, const KZGSettings *s) {
  * @remark The array lengths must be a power of two.
  * @remark Use g1_fft() for forward transformation.
  */
-C_KZG_RET g1_ifft(g1_t *out, const g1_t *in, size_t n, const KZGSettings *s) {
+C_KZG_RET g1_ifft(g1_t *out, const g1_t *in, uint64_t n, const KZGSettings *s) {
     /* Handle zero length input */
     if (n == 0) return C_KZG_OK;
 
@@ -232,13 +232,13 @@ C_KZG_RET g1_ifft(g1_t *out, const g1_t *in, size_t n, const KZGSettings *s) {
         return C_KZG_BADARGS;
     }
 
-    size_t stride = FIELD_ELEMENTS_PER_EXT_BLOB / n;
+    uint64_t stride = FIELD_ELEMENTS_PER_EXT_BLOB / n;
     g1_fft_fast(out, in, 1, s->reverse_roots_of_unity, stride, n);
 
     fr_t inv_n;
     fr_from_uint64(&inv_n, n);
     blst_fr_eucl_inverse(&inv_n, &inv_n);
-    for (size_t i = 0; i < n; i++) {
+    for (uint64_t i = 0; i < n; i++) {
         g1_mul(&out[i], &out[i], &inv_n);
     }
 
@@ -260,7 +260,7 @@ C_KZG_RET g1_ifft(g1_t *out, const g1_t *in, size_t n, const KZGSettings *s) {
  * @remark Will do nothing if given a zero length array.
  * @remark The coset shift factor is RECOVERY_SHIFT_FACTOR.
  */
-C_KZG_RET coset_fft(fr_t *out, const fr_t *in, size_t n, const KZGSettings *s) {
+C_KZG_RET coset_fft(fr_t *out, const fr_t *in, uint64_t n, const KZGSettings *s) {
     /* Handle zero length input */
     if (n == 0) return C_KZG_OK;
 
@@ -293,7 +293,7 @@ out:
  * @remark The coset shift factor is RECOVERY_SHIFT_FACTOR. In this function we use its inverse to
  * implement the IFFT.
  */
-C_KZG_RET coset_ifft(fr_t *out, const fr_t *in, size_t n, const KZGSettings *s) {
+C_KZG_RET coset_ifft(fr_t *out, const fr_t *in, uint64_t n, const KZGSettings *s) {
     /* Handle zero length input */
     if (n == 0) return C_KZG_OK;
 

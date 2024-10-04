@@ -17,7 +17,6 @@
 #include "common/utils.h"
 #include "common/alloc.h"
 
-#include <stddef.h> /* For size_t */
 #include <stdlib.h> /* For NULL */
 #include <string.h> /* For memcpy */
 
@@ -63,7 +62,7 @@ uint64_t log2_pow2(uint64_t n) {
  */
 uint64_t reverse_bits(uint64_t n) {
     uint64_t result = 0;
-    for (size_t i = 0; i < 64; ++i) {
+    for (uint64_t i = 0; i < 64; ++i) {
         result <<= 1;
         result |= (n & 1);
         n >>= 1;
@@ -82,7 +81,7 @@ uint64_t reverse_bits(uint64_t n) {
  * @remark n must be a power of two.
  */
 uint64_t reverse_bits_limited(uint64_t n, uint64_t value) {
-    size_t unused_bit_len = 64 - log2_pow2(n);
+    uint64_t unused_bit_len = 64 - log2_pow2(n);
     return reverse_bits(value) >> unused_bit_len;
 }
 
@@ -99,7 +98,7 @@ uint64_t reverse_bits_limited(uint64_t n, uint64_t value) {
  * output array and n' is obtained from n by bit-reversing n. As opposed to reverse_bits, this
  * bit-reversal operates on log2(n)-bit numbers.
  */
-C_KZG_RET bit_reversal_permutation(void *values, size_t size, size_t n) {
+C_KZG_RET bit_reversal_permutation(void *values, uint64_t size, uint64_t n) {
     C_KZG_RET ret;
     byte *tmp = NULL;
     byte *v = (byte *)values;
@@ -116,7 +115,7 @@ C_KZG_RET bit_reversal_permutation(void *values, size_t size, size_t n) {
 
     /* Reorder elements */
     uint64_t unused_bit_len = 64 - log2_pow2(n);
-    for (size_t i = 0; i < n; i++) {
+    for (uint64_t i = 0; i < n; i++) {
         uint64_t r = reverse_bits(i) >> unused_bit_len;
         if (r > i) {
             /* Swap the two elements */
@@ -140,9 +139,9 @@ out:
  *
  * @remark `out` is left untouched if `n == 0`.
  */
-void compute_powers(fr_t *out, const fr_t *x, size_t n) {
+void compute_powers(fr_t *out, const fr_t *x, uint64_t n) {
     fr_t current_power = FR_ONE;
-    for (size_t i = 0; i < n; i++) {
+    for (uint64_t i = 0; i < n; i++) {
         out[i] = current_power;
         blst_fr_mul(&current_power, &current_power, x);
     }
