@@ -217,8 +217,8 @@ C_KZG_RET recover_cells(
     fr_t *cells_brp = NULL;
 
     /* Allocate space for arrays */
-    ret = c_kzg_calloc(
-        (void **)&missing_cell_indices, FIELD_ELEMENTS_PER_EXT_BLOB, sizeof(uint64_t)
+    ret = c_kzg_malloc(
+        (void **)&missing_cell_indices, FIELD_ELEMENTS_PER_EXT_BLOB * sizeof(uint64_t)
     );
     if (ret != C_KZG_OK) goto out;
     ret = new_fr_array(&vanishing_poly_eval, FIELD_ELEMENTS_PER_EXT_BLOB);

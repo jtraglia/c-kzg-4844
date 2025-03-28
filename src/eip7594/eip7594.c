@@ -113,7 +113,7 @@ C_KZG_RET compute_cells_and_kzg_proofs(
 
     /* Ensure that only the first FIELD_ELEMENTS_PER_BLOB elements can be non-zero */
     for (size_t i = FIELD_ELEMENTS_PER_BLOB; i < FIELD_ELEMENTS_PER_EXT_BLOB; i++) {
-        assert(fr_equal(&poly_monomial[i], &FR_ZERO));
+        poly_monomial[i] = FR_ZERO;
     }
 
     if (cells != NULL) {
@@ -862,9 +862,9 @@ C_KZG_RET verify_cell_kzg_proof_batch(
     // Deduplicate commitments
     ////////////////////////////////////////////////////////////////////////////////////////////////
 
-    ret = c_kzg_calloc((void **)&unique_commitments, num_cells, sizeof(Bytes48));
+    ret = c_kzg_malloc((void **)&unique_commitments, num_cells * sizeof(Bytes48));
     if (ret != C_KZG_OK) goto out;
-    ret = c_kzg_calloc((void **)&commitment_indices, num_cells, sizeof(uint64_t));
+    ret = c_kzg_malloc((void **)&commitment_indices, num_cells * sizeof(uint64_t));
     if (ret != C_KZG_OK) goto out;
 
     /*

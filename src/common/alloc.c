@@ -18,9 +18,29 @@
 #include "common/ec.h"
 #include "common/fr.h"
 
+#include <limits.h>  /* for SIZE_MAX */
 #include <stdbool.h> /* For bool */
 #include <stddef.h>  /* For size_t & NULL */
 #include <stdlib.h>  /* For malloc */
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+// Helper Functions
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * A helper function to check if a multiplication operation will overflow.
+ *
+ * @param[out]  a   Some size value
+ * @param[in]   b   Another size value
+ *
+ * @returns true if the operation will overflow, otherwise false.
+ */
+static inline bool mul_overflow(size_t a, size_t b) {
+    if (a == 0 || b == 0) {
+        return false;
+    }
+    return a > SIZE_MAX / b;
+}
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // Memory Allocation
@@ -42,22 +62,6 @@ C_KZG_RET c_kzg_malloc(void **out, size_t size) {
 }
 
 /**
- * Wrapped calloc() that reports failures to allocate.
- *
- * @param[out]  out     Pointer to the allocated space
- * @param[in]   count   The number of elements
- * @param[in]   size    The size of each element
- *
- * @remark Will return C_KZG_BADARGS if the requested size is zero.
- */
-C_KZG_RET c_kzg_calloc(void **out, size_t count, size_t size) {
-    *out = NULL;
-    if (count == 0 || size == 0) return C_KZG_BADARGS;
-    *out = calloc(count, size);
-    return *out != NULL ? C_KZG_OK : C_KZG_MALLOC;
-}
-
-/**
  * Allocate memory for an array of G1 group elements.
  *
  * @param[out]  x   Pointer to the allocated space
@@ -66,7 +70,12 @@ C_KZG_RET c_kzg_calloc(void **out, size_t count, size_t size) {
  * @remark Free the space later using c_kzg_free().
  */
 C_KZG_RET new_g1_array(g1_t **x, size_t n) {
-    return c_kzg_calloc((void **)x, n, sizeof(g1_t));
+    /* If this will overflow, bail and return an error */
+    if (mul_overflow(n, sizeof(g1_t))) {
+        *x = NULL;
+        return C_KZG_BADARGS;
+    }
+    return c_kzg_malloc((void **)x, n * sizeof(g1_t));
 }
 
 /**
@@ -78,7 +87,12 @@ C_KZG_RET new_g1_array(g1_t **x, size_t n) {
  * @remark Free the space later using c_kzg_free().
  */
 C_KZG_RET new_g2_array(g2_t **x, size_t n) {
-    return c_kzg_calloc((void **)x, n, sizeof(g2_t));
+    /* If this will overflow, bail and return an error */
+    if (mul_overflow(n, sizeof(g2_t))) {
+        *x = NULL;
+        return C_KZG_BADARGS;
+    }
+    return c_kzg_malloc((void **)x, n * sizeof(g2_t));
 }
 
 /**
@@ -90,7 +104,12 @@ C_KZG_RET new_g2_array(g2_t **x, size_t n) {
  * @remark Free the space later using c_kzg_free().
  */
 C_KZG_RET new_fr_array(fr_t **x, size_t n) {
-    return c_kzg_calloc((void **)x, n, sizeof(fr_t));
+    /* If this will overflow, bail and return an error */
+    if (mul_overflow(n, sizeof(fr_t))) {
+        *x = NULL;
+        return C_KZG_BADARGS;
+    }
+    return c_kzg_malloc((void **)x, n * sizeof(fr_t));
 }
 
 /**
@@ -102,5 +121,10 @@ C_KZG_RET new_fr_array(fr_t **x, size_t n) {
  * @remark Free the space later using c_kzg_free().
  */
 C_KZG_RET new_bool_array(bool **x, size_t n) {
-    return c_kzg_calloc((void **)x, n, sizeof(bool));
+    /* If this will overflow, bail and return an error */
+    if (mul_overflow(n, sizeof(bool))) {
+        *x = NULL;
+        return C_KZG_BADARGS;
+    }
+    return c_kzg_malloc((void **)x, n * sizeof(bool));
 }

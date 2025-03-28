@@ -92,12 +92,12 @@ C_KZG_RET compute_fk20_cell_proofs(g1_t *out, const fr_t *p, const KZGSettings *
         /* Allocations for fixed-base MSM */
         ret = c_kzg_malloc((void **)&scratch, s->scratch_size);
         if (ret != C_KZG_OK) goto out;
-        ret = c_kzg_calloc((void **)&scalars, FIELD_ELEMENTS_PER_CELL, sizeof(blst_scalar));
+        ret = c_kzg_malloc((void **)&scalars, FIELD_ELEMENTS_PER_CELL * sizeof(blst_scalar));
         if (ret != C_KZG_OK) goto out;
     }
 
     /* Allocate 2d array for coefficients by column */
-    ret = c_kzg_calloc((void **)&coeffs, circulant_domain_size, sizeof(void *));
+    ret = c_kzg_malloc((void **)&coeffs, circulant_domain_size * sizeof(void *));
     if (ret != C_KZG_OK) goto out;
     for (size_t i = 0; i < circulant_domain_size; i++) {
         ret = new_fr_array(&coeffs[i], CELLS_PER_BLOB);

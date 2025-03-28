@@ -83,11 +83,11 @@ C_KZG_RET g1_lincomb_fast(g1_t *out, const g1_t *p, const fr_t *coeffs, size_t l
     }
 
     /* Allocate space for arrays */
-    ret = c_kzg_calloc((void **)&p_filtered, len, sizeof(blst_p1));
+    ret = c_kzg_malloc((void **)&p_filtered, len * sizeof(blst_p1));
     if (ret != C_KZG_OK) goto out;
-    ret = c_kzg_calloc((void **)&p_affine, len, sizeof(blst_p1_affine));
+    ret = c_kzg_malloc((void **)&p_affine, len * sizeof(blst_p1_affine));
     if (ret != C_KZG_OK) goto out;
-    ret = c_kzg_calloc((void **)&scalars, len, sizeof(blst_scalar));
+    ret = c_kzg_malloc((void **)&scalars, len * sizeof(blst_scalar));
     if (ret != C_KZG_OK) goto out;
 
     /* Allocate space for Pippenger scratch */

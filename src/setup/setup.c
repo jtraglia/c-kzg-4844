@@ -262,7 +262,7 @@ static C_KZG_RET init_fk20_multi_settings(KZGSettings *s) {
     if (ret != C_KZG_OK) goto out;
 
     /* Allocate space for array of pointers, this is a 2D array */
-    ret = c_kzg_calloc((void **)&s->x_ext_fft_columns, circulant_domain_size, sizeof(void *));
+    ret = c_kzg_malloc((void **)&s->x_ext_fft_columns, circulant_domain_size * sizeof(void *));
     if (ret != C_KZG_OK) goto out;
     for (size_t i = 0; i < circulant_domain_size; i++) {
         ret = new_g1_array(&s->x_ext_fft_columns[i], FIELD_ELEMENTS_PER_CELL);
@@ -290,11 +290,11 @@ static C_KZG_RET init_fk20_multi_settings(KZGSettings *s) {
 
     if (precompute) {
         /* Allocate space for precomputed tables */
-        ret = c_kzg_calloc((void **)&s->tables, circulant_domain_size, sizeof(void *));
+        ret = c_kzg_malloc((void **)&s->tables, circulant_domain_size * sizeof(void *));
         if (ret != C_KZG_OK) goto out;
 
         /* Allocate space for points in affine representation */
-        ret = c_kzg_calloc((void **)&p_affine, FIELD_ELEMENTS_PER_CELL, sizeof(blst_p1_affine));
+        ret = c_kzg_malloc((void **)&p_affine, FIELD_ELEMENTS_PER_CELL * sizeof(blst_p1_affine));
         if (ret != C_KZG_OK) goto out;
 
         /* Calculate the size of each table, this can be re-used */
@@ -511,11 +511,11 @@ C_KZG_RET load_trusted_setup_file(KZGSettings *out, FILE *in, uint64_t precomput
     uint8_t *g2_monomial_bytes = NULL;
 
     /* Allocate space for points */
-    ret = c_kzg_calloc((void **)&g1_monomial_bytes, NUM_G1_POINTS, BYTES_PER_G1);
+    ret = c_kzg_malloc((void **)&g1_monomial_bytes, NUM_G1_POINTS * BYTES_PER_G1);
     if (ret != C_KZG_OK) goto out;
-    ret = c_kzg_calloc((void **)&g1_lagrange_bytes, NUM_G1_POINTS, BYTES_PER_G1);
+    ret = c_kzg_malloc((void **)&g1_lagrange_bytes, NUM_G1_POINTS * BYTES_PER_G1);
     if (ret != C_KZG_OK) goto out;
-    ret = c_kzg_calloc((void **)&g2_monomial_bytes, NUM_G2_POINTS, BYTES_PER_G2);
+    ret = c_kzg_malloc((void **)&g2_monomial_bytes, NUM_G2_POINTS * BYTES_PER_G2);
     if (ret != C_KZG_OK) goto out;
 
     /* Read the number of g1 points */

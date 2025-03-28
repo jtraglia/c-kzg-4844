@@ -152,42 +152,6 @@ static void test_c_kzg_malloc__fails_too_big(void) {
     ASSERT_EQUALS(is_null, true);
 }
 
-static void test_c_kzg_calloc__succeeds_size_greater_than_zero(void) {
-    void *ptr = NULL;
-    C_KZG_RET ret = c_kzg_calloc(&ptr, 123, 456);
-    bool is_null = ptr == NULL;
-    c_kzg_free(ptr);
-    ASSERT_EQUALS(ret, C_KZG_OK);
-    ASSERT_EQUALS(is_null, false);
-}
-
-static void test_c_kzg_calloc__fails_count_equal_to_zero(void) {
-    void *ptr = (void *)0x123;
-    C_KZG_RET ret = c_kzg_calloc(&ptr, 0, 456);
-    bool is_null = ptr == NULL;
-    c_kzg_free(ptr);
-    ASSERT_EQUALS(ret, C_KZG_BADARGS);
-    ASSERT_EQUALS(is_null, true);
-}
-
-static void test_c_kzg_calloc__fails_size_equal_to_zero(void) {
-    void *ptr = (void *)0x123;
-    C_KZG_RET ret = c_kzg_calloc(&ptr, 123, 0);
-    bool is_null = ptr == NULL;
-    c_kzg_free(ptr);
-    ASSERT_EQUALS(ret, C_KZG_BADARGS);
-    ASSERT_EQUALS(is_null, true);
-}
-
-static void test_c_kzg_calloc__fails_too_big(void) {
-    void *ptr = NULL;
-    C_KZG_RET ret = c_kzg_calloc(&ptr, UINT64_MAX, UINT64_MAX);
-    bool is_null = ptr == NULL;
-    c_kzg_free(ptr);
-    ASSERT_EQUALS(ret, C_KZG_MALLOC);
-    ASSERT_EQUALS(is_null, true);
-}
-
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // Tests for fr_div
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -2274,10 +2238,6 @@ int main(void) {
     RUN(test_c_kzg_malloc__succeeds_size_greater_than_zero);
     RUN(test_c_kzg_malloc__fails_size_equal_to_zero);
     RUN(test_c_kzg_malloc__fails_too_big);
-    RUN(test_c_kzg_calloc__succeeds_size_greater_than_zero);
-    RUN(test_c_kzg_calloc__fails_size_equal_to_zero);
-    RUN(test_c_kzg_calloc__fails_count_equal_to_zero);
-    RUN(test_c_kzg_calloc__fails_too_big);
     RUN(test_fr_div__by_one_is_equal);
     RUN(test_fr_div__by_itself_is_one);
     RUN(test_fr_div__specific_value);
