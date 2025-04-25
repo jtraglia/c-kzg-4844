@@ -1894,19 +1894,16 @@ static void test_recover_cells_and_kzg_proofs__succeeds_random_blob(void) {
     const size_t num_partial_cells = s.cells_per_ext_blob / 2;
     uint64_t cell_indices[s.cells_per_ext_blob];
 
-    Cell *cells = NULL;
-    Cell *partial_cells = NULL;
-    Cell *recovered_cells = NULL;
+    uint8_t _raw_cells[s.cells_per_ext_blob * s.bytes_per_cell];
+    Cell *cells = (Cell *)_raw_cells;
+    uint8_t _raw_partial_cells[num_partial_cells * s.bytes_per_cell];
+    Cell *partial_cells = (Cell *)_raw_partial_cells;
+    uint8_t _raw_recovered_cells[s.cells_per_ext_blob * s.bytes_per_cell];
+    Cell *recovered_cells = (Cell *)_raw_recovered_cells;
+
     KZGProof proofs[s.cells_per_ext_blob];
     KZGProof recovered_proofs[s.cells_per_ext_blob];
     int diff;
-
-    ret = c_kzg_calloc((void **)&cells, s.cells_per_ext_blob, s.bytes_per_cell);
-    ASSERT_EQUALS(ret, C_KZG_OK);
-    ret = c_kzg_calloc((void **)&partial_cells, num_partial_cells, s.bytes_per_cell);
-    ASSERT_EQUALS(ret, C_KZG_OK);
-    ret = c_kzg_calloc((void **)&recovered_cells, s.cells_per_ext_blob, s.bytes_per_cell);
-    ASSERT_EQUALS(ret, C_KZG_OK);
 
     /* Get a random blob */
     get_rand_blob(&blob);
@@ -1938,11 +1935,6 @@ static void test_recover_cells_and_kzg_proofs__succeeds_random_blob(void) {
         diff = memcmp(&proofs[i], &recovered_proofs[i], sizeof(KZGProof));
         ASSERT_EQUALS(diff, 0);
     }
-
-    /* Free our heap allocations */
-    c_kzg_free(cells);
-    c_kzg_free(partial_cells);
-    c_kzg_free(recovered_cells);
 }
 
 static void test_compute_vanishing_polynomial_from_roots(void) {
@@ -2056,11 +2048,10 @@ static void test_verify_cell_kzg_proof_batch__succeeds_random_blob(void) {
     KZGCommitment commitment;
     Bytes48 commitments[s.cells_per_ext_blob];
     uint64_t cell_indices[s.cells_per_ext_blob];
-    Cell *cells = NULL;
     KZGProof proofs[s.cells_per_ext_blob];
 
-    ret = c_kzg_calloc((void **)&cells, s.cells_per_ext_blob, s.bytes_per_cell);
-    ASSERT_EQUALS(ret, C_KZG_OK);
+    uint8_t _raw_cells[s.cells_per_ext_blob * s.bytes_per_cell];
+    Cell *cells = (Cell *)_raw_cells;
 
     /* Get a random blob */
     get_rand_blob(&blob);

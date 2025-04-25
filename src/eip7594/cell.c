@@ -21,18 +21,24 @@
 #include <stdio.h> /* For printf */
 
 /**
- * Print Cell to the console.
+ * Get the cell at a specific index in an array of cells.
  *
- * @param[in]   cell    The Cell to print
+ * @param[in]   cells   The array of cells to take from
+ * @param[in]   index   The index into the array
+ * @param[in]   s       The trusted setup
  */
 const Cell *cell_at(const Cell *cells, size_t index, const KZGSettings *s) {
     return (const Cell *)((const uint8_t *)cells + index * s->bytes_per_cell);
 }
 
 /**
- * Print Cell to the console.
+ * Get the cell at a specific index in an array of cells.
  *
- * @param[in]   cell    The Cell to print
+ * @param[in]   cells   The array of cells to take from
+ * @param[in]   index   The index into the array
+ * @param[in]   s       The trusted setup
+ *
+ * @remark This version returns a mutable cell.
  */
 Cell *mut_cell_at(Cell *cells, size_t index, const KZGSettings *s) {
     return (Cell *)((uint8_t *)cells + index * s->bytes_per_cell);

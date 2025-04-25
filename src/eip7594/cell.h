@@ -17,6 +17,7 @@
 #pragma once
 
 #include "eip4844/blob.h"
+#include "setup/settings.h"
 
 #include <inttypes.h> /* For uint8_t */
 
@@ -35,6 +36,12 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wzero-length-array"
 typedef struct {
+    /*
+     * This is a zero-length array because we cannot use flexible-array,
+     * as it cannot be the only field in a structure. For these to be
+     * stored as a flat, contiguous array, we must not include
+     * other data in the structure.
+     */
     uint8_t bytes[0];
 } Cell;
 #pragma GCC diagnostic pop
