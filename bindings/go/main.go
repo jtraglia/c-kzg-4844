@@ -298,7 +298,6 @@ func ComputeKZGProof(blob *Blob, zBytes Bytes32) (KZGProof, Bytes32, error) {
 		(*C.Blob)(unsafe.Pointer(blob)),
 		(*C.Bytes32)(unsafe.Pointer(&zBytes)),
 		&settings)
-
 	if ret != C.C_KZG_OK {
 		return KZGProof{}, Bytes32{}, makeErrorFromRet(ret)
 	}
@@ -321,13 +320,13 @@ func ComputeBlobKZGProof(blob *Blob, commitmentBytes Bytes48) (KZGProof, error) 
 	if blob == nil {
 		return KZGProof{}, ErrBadArgs
 	}
+
 	var proof KZGProof
 	ret := C.compute_blob_kzg_proof(
 		(*C.KZGProof)(unsafe.Pointer(&proof)),
 		(*C.Blob)(unsafe.Pointer(blob)),
 		(*C.Bytes48)(unsafe.Pointer(&commitmentBytes)),
 		&settings)
-
 	if ret != C.C_KZG_OK {
 		return KZGProof{}, makeErrorFromRet(ret)
 	}
@@ -357,7 +356,6 @@ func VerifyKZGProof(commitmentBytes Bytes48, zBytes, yBytes Bytes32, proofBytes 
 		(*C.Bytes32)(unsafe.Pointer(&yBytes)),
 		(*C.Bytes48)(unsafe.Pointer(&proofBytes)),
 		&settings)
-
 	if ret != C.C_KZG_OK {
 		return false, makeErrorFromRet(ret)
 	}
@@ -389,7 +387,6 @@ func VerifyBlobKZGProof(blob *Blob, commitmentBytes, proofBytes Bytes48) (bool, 
 		(*C.Bytes48)(unsafe.Pointer(&commitmentBytes)),
 		(*C.Bytes48)(unsafe.Pointer(&proofBytes)),
 		&settings)
-
 	if ret != C.C_KZG_OK {
 		return false, makeErrorFromRet(ret)
 	}
@@ -422,7 +419,6 @@ func VerifyBlobKZGProofBatch(blobs []Blob, commitmentsBytes, proofsBytes []Bytes
 		*(**C.Bytes48)(unsafe.Pointer(&proofsBytes)),
 		(C.uint64_t)(len(blobs)),
 		&settings)
-
 	if ret != C.C_KZG_OK {
 		return false, makeErrorFromRet(ret)
 	}
@@ -448,12 +444,10 @@ func ComputeCells(blob *Blob) ([]Cell, error) {
 		*(**C.Cell)(unsafe.Pointer(&cellsBuf)),
 		(*C.KZGProof)(nil),
 		(*C.Blob)(unsafe.Pointer(blob)),
-		&settings,
-	)
+		&settings)
 	if ret != C.C_KZG_OK {
 		return nil, makeErrorFromRet(ret)
 	}
-
 	return bufToCells(cellsBuf), nil
 }
 
@@ -481,7 +475,6 @@ func ComputeCellsAndKZGProofs(blob *Blob) ([]Cell, []KZGProof, error) {
 	if ret != C.C_KZG_OK {
 		return nil, nil, makeErrorFromRet(ret)
 	}
-
 	return bufToCells(cellsBuf), proofs, nil
 }
 
@@ -522,7 +515,6 @@ func RecoverCellsAndKZGProofs(cellIndices []uint64, cells []Cell) ([]Cell, []KZG
 	if ret != C.C_KZG_OK {
 		return nil, nil, makeErrorFromRet(ret)
 	}
-
 	return bufToCells(recoveredCellsBuf), recoveredProofs, nil
 }
 
@@ -561,7 +553,6 @@ func VerifyCellKZGProofBatch(commitmentsBytes []Bytes48, cellIndices []uint64, c
 		*(**C.Bytes48)(unsafe.Pointer(&proofsBytes)),
 		(C.uint64_t)(len(cells)),
 		&settings)
-
 	if ret != C.C_KZG_OK {
 		return false, makeErrorFromRet(ret)
 	}
