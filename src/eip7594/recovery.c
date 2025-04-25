@@ -80,7 +80,7 @@ static C_KZG_RET compute_vanishing_polynomial_from_roots(
  *
  * The roots of unity are chosen based on the missing cell indices. If the i'th cell is missing,
  * then the i'th root of unity from `roots_of_unity` will be zero on the polynomial
- * computed, along with every `CELLS_PER_EXT_BLOB` spaced root of unity in the domain.
+ * computed, along with every `s->cells_per_ext_blob` spaced root of unity in the domain.
  *
  * @param[in,out]   vanishing_poly          The output vanishing polynomial
  * @param[in]       missing_cell_indices    The array of missing cell indices
@@ -102,7 +102,7 @@ static C_KZG_RET vanishing_polynomial_for_missing_cells(
     size_t short_vanishing_poly_len = 0;
 
     /* Return early if none or all of the cells are missing */
-    if (len_missing_cells == 0 || len_missing_cells >= CELLS_PER_EXT_BLOB) {
+    if (len_missing_cells == 0 || len_missing_cells >= s->cells_per_ext_blob) {
         ret = C_KZG_BADARGS;
         goto out;
     }
@@ -115,12 +115,12 @@ static C_KZG_RET vanishing_polynomial_for_missing_cells(
 
     /*
      * For each missing cell index, choose the corresponding root of unity from the subgroup of
-     * size `CELLS_PER_EXT_BLOB`.
+     * size `s->cells_per_ext_blob`.
      *
      * In other words, if the missing index is `i`, then we add \omega^i to the roots array, where
-     * \omega is a primitive `CELLS_PER_EXT_BLOB` root of unity.
+     * \omega is a primitive `s->cells_per_ext_blob` root of unity.
      */
-    size_t stride = FIELD_ELEMENTS_PER_EXT_BLOB / CELLS_PER_EXT_BLOB;
+    size_t stride = FIELD_ELEMENTS_PER_EXT_BLOB / s->cells_per_ext_blob;
     for (size_t i = 0; i < len_missing_cells; i++) {
         roots[i] = s->roots_of_unity[missing_cell_indices[i] * stride];
     }
@@ -143,16 +143,16 @@ static C_KZG_RET vanishing_polynomial_for_missing_cells(
      *      \omega^i * \gamma^0,
      *      \omega^i * \gamma^1,
      *      ...,
-     *      \omega^i * \gamma^{FIELD_ELEMENTS_PER_CELL-1}
+     *      \omega^i * \gamma^{s->field_elements_per_cell-1}
      *  }
      *
      * where \gamma is a primitive `FIELD_ELEMENTS_PER_EXT_BLOB`-th root of unity.
      *
      * This is done by shifting the degree of all coefficients in `short_vanishing_poly` up by
-     * `FIELD_ELEMENTS_PER_CELL` amount.
+     * `s->field_elements_per_cell` amount.
      */
     for (size_t i = 0; i < short_vanishing_poly_len; i++) {
-        vanishing_poly[i * FIELD_ELEMENTS_PER_CELL] = short_vanishing_poly[i];
+        vanishing_poly[i * s->field_elements_per_cell] = short_vanishing_poly[i];
     }
 
 out:
@@ -245,20 +245,20 @@ C_KZG_RET recover_cells(
 
     /* Identify missing cells */
     size_t len_missing = 0;
-    for (size_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
+    for (size_t i = 0; i < s->cells_per_ext_blob; i++) {
         /* Iterate over each cell index and check if we have received it */
         if (!is_in_array(cell_indices, num_cells, i)) {
             /* If the cell is missing, bit reverse the index and add it to the missing array */
-            uint64_t brp_i = reverse_bits_limited(CELLS_PER_EXT_BLOB, i);
+            uint64_t brp_i = reverse_bits_limited(s->cells_per_ext_blob, i);
             missing_cell_indices[len_missing++] = brp_i;
         }
     }
 
     /*
      * Check that we have enough cells to recover.
-     * Concretely, we need to have at least CELLS_PER_BLOB many cells.
+     * Concretely, we need to have at least s->cells_per_blob many cells.
      */
-    assert(CELLS_PER_EXT_BLOB - len_missing >= CELLS_PER_BLOB);
+    assert(s->cells_per_ext_blob - len_missing >= s->cells_per_blob);
 
     /*
      * Compute Z(x) in monomial form.

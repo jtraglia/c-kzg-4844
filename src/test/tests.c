@@ -1845,12 +1845,12 @@ static void test_deduplicate_commitments__one_commitment(void) {
 static void test_shift_factors__succeeds(void) {
     fr_t expected_inv_coset_factor, computed_inv_coset_factor, h_k;
     fr_t expected_coset_factor_pow, computed_coset_factor_pow;
-    static uint64_t n = FIELD_ELEMENTS_PER_CELL;
+    uint64_t n = s.field_elements_per_cell;
 
     /* Loop over all cells */
-    for (uint64_t cell_index = 0; cell_index < CELLS_PER_EXT_BLOB; cell_index++) {
+    for (uint64_t cell_index = 0; cell_index < s.cells_per_ext_blob; cell_index++) {
         /* Get the cell index in reverse-bit order */
-        uint64_t cell_idx_rbl = reverse_bits_limited(CELLS_PER_EXT_BLOB, cell_index);
+        uint64_t cell_idx_rbl = reverse_bits_limited(s.cells_per_ext_blob, cell_index);
 
         /* Ensure the index is within bounds */
         assert(cell_idx_rbl < FIELD_ELEMENTS_PER_EXT_BLOB + 1);
@@ -1891,14 +1891,22 @@ static void test_shift_factors__succeeds(void) {
 static void test_recover_cells_and_kzg_proofs__succeeds_random_blob(void) {
     C_KZG_RET ret;
     Blob blob;
-    const size_t num_partial_cells = CELLS_PER_EXT_BLOB / 2;
-    uint64_t cell_indices[CELLS_PER_EXT_BLOB];
-    Cell cells[CELLS_PER_EXT_BLOB];
-    Cell partial_cells[num_partial_cells];
-    Cell recovered_cells[CELLS_PER_EXT_BLOB];
-    KZGProof proofs[CELLS_PER_EXT_BLOB];
-    KZGProof recovered_proofs[CELLS_PER_EXT_BLOB];
+    const size_t num_partial_cells = s.cells_per_ext_blob / 2;
+    uint64_t cell_indices[s.cells_per_ext_blob];
+
+    Cell *cells = NULL;
+    Cell *partial_cells = NULL;
+    Cell *recovered_cells = NULL;
+    KZGProof proofs[s.cells_per_ext_blob];
+    KZGProof recovered_proofs[s.cells_per_ext_blob];
     int diff;
+
+    ret = c_kzg_calloc((void **)&cells, s.cells_per_ext_blob, s.bytes_per_cell);
+    ASSERT_EQUALS(ret, C_KZG_OK);
+    ret = c_kzg_calloc((void **)&partial_cells, num_partial_cells, s.bytes_per_cell);
+    ASSERT_EQUALS(ret, C_KZG_OK);
+    ret = c_kzg_calloc((void **)&recovered_cells, s.cells_per_ext_blob, s.bytes_per_cell);
+    ASSERT_EQUALS(ret, C_KZG_OK);
 
     /* Get a random blob */
     get_rand_blob(&blob);
@@ -1910,7 +1918,11 @@ static void test_recover_cells_and_kzg_proofs__succeeds_random_blob(void) {
     /* Erase half of the cells */
     for (size_t i = 0; i < num_partial_cells; i++) {
         cell_indices[i] = i * 2;
-        memcpy(&partial_cells[i], &cells[cell_indices[i]], sizeof(Cell));
+        memcpy(
+            mut_cell_at(partial_cells, i, &s)->bytes,
+            mut_cell_at(cells, cell_indices[i], &s)->bytes,
+            s.bytes_per_cell
+        );
     }
 
     /* Reconstruct with half of the cells */
@@ -1920,12 +1932,17 @@ static void test_recover_cells_and_kzg_proofs__succeeds_random_blob(void) {
     ASSERT_EQUALS(ret, C_KZG_OK);
 
     /* Check that all of the cells match */
-    for (size_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
-        diff = memcmp(&cells[i], &recovered_cells[i], sizeof(Cell));
+    for (size_t i = 0; i < s.cells_per_ext_blob; i++) {
+        diff = memcmp(cell_at(cells, i, &s), cell_at(recovered_cells, i, &s), s.bytes_per_cell);
         ASSERT_EQUALS(diff, 0);
         diff = memcmp(&proofs[i], &recovered_proofs[i], sizeof(KZGProof));
         ASSERT_EQUALS(diff, 0);
     }
+
+    /* Free our heap allocations */
+    c_kzg_free(cells);
+    c_kzg_free(partial_cells);
+    c_kzg_free(recovered_cells);
 }
 
 static void test_compute_vanishing_polynomial_from_roots(void) {
@@ -1997,12 +2014,12 @@ static void test_vanishing_polynomial_for_missing_cells(void) {
      * ...
      * s->roots_of_unity[8064]
      *
-     * For every cell index, we should have `FIELD_ELEMENTS_PER_CELL` number of these roots. ie each
-     * cell index corresponds to 64 roots taken from `roots_of_unity` in the vanishing
+     * For every cell index, we should have `s.field_elements_per_cell` number of these roots. ie
+     * each cell index corresponds to 64 roots taken from `roots_of_unity` in the vanishing
      * polynomial.
      *
-     * In general, the formula is roots_of_unity[cell_index + CELLS_PER_EXT_BLOB * k] where
-     * `k` goes from 0 to FIELD_ELEMENTS_PER_CELL-1.
+     * In general, the formula is roots_of_unity[cell_index + s.cells_per_ext_blob * k] where
+     * `k` goes from 0 to s.field_elements_per_cell-1.
      *
      * For cell index 1, we would therefore expect the polynomial to vanish at points:
      *
@@ -2019,8 +2036,8 @@ static void test_vanishing_polynomial_for_missing_cells(void) {
      * correct since `roots_of_unity` has 8192 elements.
      */
     for (size_t i = 0; i < FIELD_ELEMENTS_PER_EXT_BLOB; i++) {
-        if (i % CELLS_PER_EXT_BLOB == 1 || i % CELLS_PER_EXT_BLOB == 0) {
-            /* Every CELLS_PER_EXT_BLOB-th evaluation should be zero */
+        if (i % s.cells_per_ext_blob == 1 || i % s.cells_per_ext_blob == 0) {
+            /* Every s.cells_per_ext_blob-th evaluation should be zero */
             ASSERT("evaluation is zero", fr_is_zero(&fft_result[i]));
         } else {
             ASSERT("evaluation is not zero", !fr_is_zero(&fft_result[i]));
@@ -2037,10 +2054,13 @@ static void test_verify_cell_kzg_proof_batch__succeeds_random_blob(void) {
     bool ok;
     Blob blob;
     KZGCommitment commitment;
-    Bytes48 commitments[CELLS_PER_EXT_BLOB];
-    uint64_t cell_indices[CELLS_PER_EXT_BLOB];
-    Cell cells[CELLS_PER_EXT_BLOB];
-    KZGProof proofs[CELLS_PER_EXT_BLOB];
+    Bytes48 commitments[s.cells_per_ext_blob];
+    uint64_t cell_indices[s.cells_per_ext_blob];
+    Cell *cells = NULL;
+    KZGProof proofs[s.cells_per_ext_blob];
+
+    ret = c_kzg_calloc((void **)&cells, s.cells_per_ext_blob, s.bytes_per_cell);
+    ASSERT_EQUALS(ret, C_KZG_OK);
 
     /* Get a random blob */
     get_rand_blob(&blob);
@@ -2054,14 +2074,14 @@ static void test_verify_cell_kzg_proof_batch__succeeds_random_blob(void) {
     ASSERT_EQUALS(ret, C_KZG_OK);
 
     /* Initialize list of commitments & cell indices */
-    for (size_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
+    for (size_t i = 0; i < s.cells_per_ext_blob; i++) {
         memcpy(commitments[i].bytes, &commitment, BYTES_PER_COMMITMENT);
         cell_indices[i] = i;
     }
 
     /* Verify all the proofs */
     ret = verify_cell_kzg_proof_batch(
-        &ok, commitments, cell_indices, cells, proofs, CELLS_PER_EXT_BLOB, &s
+        &ok, commitments, cell_indices, cells, proofs, s.cells_per_ext_blob, &s
     );
     ASSERT_EQUALS(ret, C_KZG_OK);
 }
@@ -2169,8 +2189,8 @@ static void profile_verify_blob_kzg_proof_batch(void) {
 
 static void profile_compute_cells_and_kzg_proofs(void) {
     Blob blob;
-    Cell cells[CELLS_PER_EXT_BLOB];
-    KZGProof proofs[CELLS_PER_EXT_BLOB];
+    Cell cells[s.cells_per_ext_blob];
+    KZGProof proofs[s.cells_per_ext_blob];
 
     /* Get a random blob */
     get_rand_blob(&blob);
@@ -2184,8 +2204,8 @@ static void profile_compute_cells_and_kzg_proofs(void) {
 
 static void profile_recover_cells_and_kzg_proofs(void) {
     Blob blob;
-    uint64_t cell_indices[CELLS_PER_EXT_BLOB];
-    Cell cells[CELLS_PER_EXT_BLOB];
+    uint64_t cell_indices[s.cells_per_ext_blob];
+    Cell cells[s.cells_per_ext_blob];
 
     /*
      * NOTE: this profiling function only cares about cell recovery since the proofs will always be
@@ -2199,13 +2219,15 @@ static void profile_recover_cells_and_kzg_proofs(void) {
     compute_cells_and_kzg_proofs(cells, NULL, &blob, &s);
 
     /* Initialize cell indices */
-    for (size_t i = 0; i < CELLS_PER_EXT_BLOB / 2; i++) {
+    for (size_t i = 0; i < s.cells_per_ext_blob / 2; i++) {
         cell_indices[i] = i;
     }
 
     ProfilerStart("recover_cells_and_kzg_proofs.prof");
     for (size_t i = 0; i < 5; i++) {
-        recover_cells_and_kzg_proofs(cells, NULL, cell_indices, cells, CELLS_PER_EXT_BLOB / 2, &s);
+        recover_cells_and_kzg_proofs(
+            cells, NULL, cell_indices, cells, s.cells_per_ext_blob / 2, &s
+        );
     }
     ProfilerStop();
 }
@@ -2215,10 +2237,10 @@ static void profile_verify_cell_kzg_proof_batch(void) {
     bool ok;
     Blob blob;
     KZGCommitment commitment;
-    KZGCommitment commitments[CELLS_PER_EXT_BLOB];
-    uint64_t cell_indices[CELLS_PER_EXT_BLOB];
-    Cell cells[CELLS_PER_EXT_BLOB];
-    KZGProof proofs[CELLS_PER_EXT_BLOB];
+    KZGCommitment commitments[s.cells_per_ext_blob];
+    uint64_t cell_indices[s.cells_per_ext_blob];
+    Cell cells[s.cells_per_ext_blob];
+    KZGProof proofs[s.cells_per_ext_blob];
 
     /* Get a random blob */
     get_rand_blob(&blob);
@@ -2231,7 +2253,7 @@ static void profile_verify_cell_kzg_proof_batch(void) {
     ret = compute_cells_and_kzg_proofs(cells, proofs, &blob, &s);
     ASSERT_EQUALS(ret, C_KZG_OK);
 
-    for (size_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
+    for (size_t i = 0; i < s.cells_per_ext_blob; i++) {
         memcpy(commitments[i].bytes, &commitment, BYTES_PER_COMMITMENT);
         cell_indices[i] = i;
     }
@@ -2239,7 +2261,7 @@ static void profile_verify_cell_kzg_proof_batch(void) {
     ProfilerStart("verify_cell_kzg_proof_batch.prof");
     for (size_t i = 0; i < 100; i++) {
         verify_cell_kzg_proof_batch(
-            &ok, commitments, cell_indices, cells, proofs, CELLS_PER_EXT_BLOB, &s
+            &ok, commitments, cell_indices, cells, proofs, s.cells_per_ext_blob, &s
         );
     }
     ProfilerStop();

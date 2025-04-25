@@ -16,6 +16,7 @@
 
 #include "eip7594/cell.h"
 #include "common/bytes.h"
+#include "setup/settings.h"
 
 #include <stdio.h> /* For printf */
 
@@ -24,9 +25,27 @@
  *
  * @param[in]   cell    The Cell to print
  */
-void print_cell(const Cell *cell) {
-    for (size_t i = 0; i < FIELD_ELEMENTS_PER_CELL; i++) {
-        const Bytes32 *element_bytes = (const Bytes32 *)&cell->bytes[i * BYTES_PER_FIELD_ELEMENT];
+const Cell *cell_at(const Cell *cells, size_t index, const KZGSettings *s) {
+    return (const Cell *)((const uint8_t *)cells + index * s->bytes_per_cell);
+}
+
+/**
+ * Print Cell to the console.
+ *
+ * @param[in]   cell    The Cell to print
+ */
+Cell *mut_cell_at(Cell *cells, size_t index, const KZGSettings *s) {
+    return (Cell *)((uint8_t *)cells + index * s->bytes_per_cell);
+}
+
+/**
+ * Print Cell to the console.
+ *
+ * @param[in]   cell    The Cell to print
+ */
+void print_cell(const Cell *cell, const KZGSettings *s) {
+    for (size_t i = 0; i < s->field_elements_per_cell; i++) {
+        const Bytes32 *element_bytes = (const Bytes32 *)&cell[i * BYTES_PER_FIELD_ELEMENT];
         print_bytes32(element_bytes);
     }
 }

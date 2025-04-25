@@ -24,36 +24,20 @@
 // Macros
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-/** The number of field elements in a cell. */
-#define FIELD_ELEMENTS_PER_CELL 64
-
-/** The number of bytes in a single cell. */
-#define BYTES_PER_CELL (FIELD_ELEMENTS_PER_CELL * BYTES_PER_FIELD_ELEMENT)
-
-/**
- * The logarithm (base 2) of the expansion factor of our Reed-Solomon code.
- * In other words, this defines the rate of the Reed-Solomon code (blob / extended blob).
- * Note that our codebase is not guaranteed to work anymore if this is changed.
- */
-#define LOG_EXPANSION_FACTOR 1
-
-/** The number of field elements in an extended blob. */
-#define FIELD_ELEMENTS_PER_EXT_BLOB (FIELD_ELEMENTS_PER_BLOB << LOG_EXPANSION_FACTOR)
-
-/** The number of cells in a blob. */
-#define CELLS_PER_BLOB (FIELD_ELEMENTS_PER_BLOB / FIELD_ELEMENTS_PER_CELL)
-
-/** The number of cells in an extended blob. */
-#define CELLS_PER_EXT_BLOB (FIELD_ELEMENTS_PER_EXT_BLOB / FIELD_ELEMENTS_PER_CELL)
+/** The maximum number of field elements in a cell. */
+#define MAX_FIELD_ELEMENTS_PER_CELL 64
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // Types
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /** A single cell for a blob. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wzero-length-array"
 typedef struct {
-    uint8_t bytes[BYTES_PER_CELL];
+    uint8_t bytes[0];
 } Cell;
+#pragma GCC diagnostic pop
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // Public Functions
@@ -63,7 +47,9 @@ typedef struct {
 extern "C" {
 #endif
 
-void print_cell(const Cell *cell);
+const Cell *cell_at(const Cell *cells, size_t index, const KZGSettings *s);
+Cell *mut_cell_at(Cell *cells, size_t index, const KZGSettings *s);
+void print_cell(const Cell *cell, const KZGSettings *s);
 
 #ifdef __cplusplus
 }

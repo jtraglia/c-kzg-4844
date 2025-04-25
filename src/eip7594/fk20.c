@@ -25,14 +25,14 @@
 /**
  * Reorder and extend polynomial coefficients for the toeplitz method, strided version.
  *
- * @param[out]  out     The reordered polynomial, length `CELLS_PER_EXT_BLOB`
+ * @param[out]  out     The reordered polynomial, length `s->cells_per_ext_blob`
  * @param[in]   in      The input polynomial, length `FIELD_ELEMENTS_PER_BLOB`
  * @param[in]   offset  The offset
  */
-static void toeplitz_coeffs_stride(fr_t *out, const fr_t *in, size_t offset) {
+static void toeplitz_coeffs_stride(fr_t *out, const fr_t *in, size_t offset, const KZGSettings *s) {
     /* Calculate starting indices */
-    size_t out_start = CELLS_PER_BLOB + 2;
-    size_t in_start = CELLS_PER_EXT_BLOB - offset - 1;
+    size_t out_start = s->cells_per_blob + 2;
+    size_t in_start = s->cells_per_ext_blob - offset - 1;
 
     /* Set the first element */
     out[0] = in[FIELD_ELEMENTS_PER_BLOB - 1 - offset];
@@ -43,15 +43,15 @@ static void toeplitz_coeffs_stride(fr_t *out, const fr_t *in, size_t offset) {
     }
 
     /* Copy elements with a fixed stride */
-    for (size_t i = 0; i < CELLS_PER_EXT_BLOB - out_start; i++) {
-        out[out_start + i] = in[in_start + i * FIELD_ELEMENTS_PER_CELL];
+    for (size_t i = 0; i < s->cells_per_ext_blob - out_start; i++) {
+        out[out_start + i] = in[in_start + i * s->field_elements_per_cell];
     }
 }
 
 /**
  * Compute FK20 cell-proofs for a polynomial.
  *
- * @param[out]  out An array of CELLS_PER_EXT_BLOB proofs
+ * @param[out]  out An array of s->cells_per_ext_blob proofs
  * @param[in]   p   The polynomial, an array of FIELD_ELEMENTS_PER_BLOB coefficients
  * @param[in]   s   The trusted setup
  *
@@ -76,7 +76,7 @@ C_KZG_RET compute_fk20_cell_proofs(g1_t *out, const fr_t *p, const KZGSettings *
      * Instead, it is related to circulant matrices used in FK20, see
      * Section 2.2 and 3.2 in https://eprint.iacr.org/2023/033.pdf.
      */
-    circulant_domain_size = CELLS_PER_BLOB * 2;
+    circulant_domain_size = s->cells_per_blob * 2;
 
     /* Do allocations */
     ret = new_fr_array(&toeplitz_coeffs, circulant_domain_size);
@@ -92,7 +92,7 @@ C_KZG_RET compute_fk20_cell_proofs(g1_t *out, const fr_t *p, const KZGSettings *
         /* Allocations for fixed-base MSM */
         ret = c_kzg_malloc((void **)&scratch, s->scratch_size);
         if (ret != C_KZG_OK) goto out;
-        ret = c_kzg_calloc((void **)&scalars, FIELD_ELEMENTS_PER_CELL, sizeof(blst_scalar));
+        ret = c_kzg_calloc((void **)&scalars, s->field_elements_per_cell, sizeof(blst_scalar));
         if (ret != C_KZG_OK) goto out;
     }
 
@@ -100,7 +100,7 @@ C_KZG_RET compute_fk20_cell_proofs(g1_t *out, const fr_t *p, const KZGSettings *
     ret = c_kzg_calloc((void **)&coeffs, circulant_domain_size, sizeof(void *));
     if (ret != C_KZG_OK) goto out;
     for (size_t i = 0; i < circulant_domain_size; i++) {
-        ret = new_fr_array(&coeffs[i], CELLS_PER_BLOB);
+        ret = new_fr_array(&coeffs[i], s->cells_per_blob);
         if (ret != C_KZG_OK) goto out;
     }
 
@@ -110,8 +110,8 @@ C_KZG_RET compute_fk20_cell_proofs(g1_t *out, const fr_t *p, const KZGSettings *
     }
 
     /* Compute toeplitz coefficients and organize by column */
-    for (size_t i = 0; i < FIELD_ELEMENTS_PER_CELL; i++) {
-        toeplitz_coeffs_stride(toeplitz_coeffs, p, i);
+    for (size_t i = 0; i < s->field_elements_per_cell; i++) {
+        toeplitz_coeffs_stride(toeplitz_coeffs, p, i, s);
         ret = fr_fft(toeplitz_coeffs_fft, toeplitz_coeffs, circulant_domain_size, s);
         if (ret != C_KZG_OK) goto out;
         for (size_t j = 0; j < circulant_domain_size; j++) {
@@ -123,7 +123,7 @@ C_KZG_RET compute_fk20_cell_proofs(g1_t *out, const fr_t *p, const KZGSettings *
     for (size_t i = 0; i < circulant_domain_size; i++) {
         if (precompute) {
             /* Transform the field elements to 255-bit scalars */
-            for (size_t j = 0; j < FIELD_ELEMENTS_PER_CELL; j++) {
+            for (size_t j = 0; j < s->field_elements_per_cell; j++) {
                 blst_scalar_from_fr(&scalars[j], &coeffs[i][j]);
             }
             const byte *scalars_arg[2] = {(byte *)scalars, NULL};
@@ -133,7 +133,7 @@ C_KZG_RET compute_fk20_cell_proofs(g1_t *out, const fr_t *p, const KZGSettings *
                 &h_ext_fft[i],
                 s->tables[i],
                 s->wbits,
-                FIELD_ELEMENTS_PER_CELL,
+                s->field_elements_per_cell,
                 scalars_arg,
                 BITS_PER_FIELD_ELEMENT,
                 scratch
@@ -141,7 +141,7 @@ C_KZG_RET compute_fk20_cell_proofs(g1_t *out, const fr_t *p, const KZGSettings *
         } else {
             /* A pretty fast MSM without precomputation */
             ret = g1_lincomb_fast(
-                &h_ext_fft[i], s->x_ext_fft_columns[i], coeffs[i], FIELD_ELEMENTS_PER_CELL
+                &h_ext_fft[i], s->x_ext_fft_columns[i], coeffs[i], s->field_elements_per_cell
             );
             if (ret != C_KZG_OK) goto out;
         }
@@ -151,7 +151,7 @@ C_KZG_RET compute_fk20_cell_proofs(g1_t *out, const fr_t *p, const KZGSettings *
     if (ret != C_KZG_OK) goto out;
 
     /* Zero the second half of h */
-    for (size_t i = CELLS_PER_BLOB; i < circulant_domain_size; i++) {
+    for (size_t i = s->cells_per_blob; i < circulant_domain_size; i++) {
         h[i] = G1_IDENTITY;
     }
 

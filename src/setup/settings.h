@@ -76,4 +76,9 @@ typedef struct {
     size_t wbits;
     /** The scratch size for the fixed-base MSM. */
     size_t scratch_size;
+    /** The number of field elements in a cell. */
+    size_t field_elements_per_cell;
+    size_t bytes_per_cell;
+    size_t cells_per_blob;
+    size_t cells_per_ext_blob;
 } KZGSettings;

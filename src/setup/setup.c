@@ -174,12 +174,12 @@ void free_trusted_setup(KZGSettings *s) {
      * possible for there to be a segmentation fault via null pointer dereference.
      */
     if (s->x_ext_fft_columns != NULL) {
-        for (size_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
+        for (size_t i = 0; i < s->cells_per_ext_blob; i++) {
             c_kzg_free(s->x_ext_fft_columns[i]);
         }
     }
     if (s->tables != NULL) {
-        for (size_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
+        for (size_t i = 0; i < s->cells_per_ext_blob; i++) {
             c_kzg_free(s->tables[i]);
         }
     }
@@ -248,15 +248,15 @@ static C_KZG_RET init_fk20_multi_settings(KZGSettings *s) {
      * Instead, it is related to circulant matrices used in FK20, see
      * Section 2.2 and 3.2 in https://eprint.iacr.org/2023/033.pdf.
      */
-    circulant_domain_size = 2 * CELLS_PER_BLOB;
+    circulant_domain_size = 2 * s->cells_per_blob;
 
-    if (FIELD_ELEMENTS_PER_CELL >= NUM_G2_POINTS) {
+    if (s->field_elements_per_cell >= NUM_G2_POINTS) {
         ret = C_KZG_BADARGS;
         goto out;
     }
 
     /* Allocate space for arrays */
-    ret = new_g1_array(&x, CELLS_PER_BLOB);
+    ret = new_g1_array(&x, s->cells_per_blob);
     if (ret != C_KZG_OK) goto out;
     ret = new_g1_array(&points, circulant_domain_size);
     if (ret != C_KZG_OK) goto out;
@@ -265,21 +265,21 @@ static C_KZG_RET init_fk20_multi_settings(KZGSettings *s) {
     ret = c_kzg_calloc((void **)&s->x_ext_fft_columns, circulant_domain_size, sizeof(void *));
     if (ret != C_KZG_OK) goto out;
     for (size_t i = 0; i < circulant_domain_size; i++) {
-        ret = new_g1_array(&s->x_ext_fft_columns[i], FIELD_ELEMENTS_PER_CELL);
+        ret = new_g1_array(&s->x_ext_fft_columns[i], s->field_elements_per_cell);
         if (ret != C_KZG_OK) goto out;
     }
 
-    for (size_t offset = 0; offset < FIELD_ELEMENTS_PER_CELL; offset++) {
+    for (size_t offset = 0; offset < s->field_elements_per_cell; offset++) {
         /* Compute x, sections of the g1 values */
-        size_t start = FIELD_ELEMENTS_PER_BLOB - FIELD_ELEMENTS_PER_CELL - 1 - offset;
-        for (size_t i = 0; i < CELLS_PER_BLOB - 1; i++) {
-            size_t j = start - i * FIELD_ELEMENTS_PER_CELL;
+        size_t start = FIELD_ELEMENTS_PER_BLOB - s->field_elements_per_cell - 1 - offset;
+        for (size_t i = 0; i < s->cells_per_blob - 1; i++) {
+            size_t j = start - i * s->field_elements_per_cell;
             x[i] = s->g1_values_monomial[j];
         }
-        x[CELLS_PER_BLOB - 1] = G1_IDENTITY;
+        x[s->cells_per_blob - 1] = G1_IDENTITY;
 
         /* Compute points, the fft of an extended x */
-        ret = toeplitz_part_1(points, x, CELLS_PER_BLOB, s);
+        ret = toeplitz_part_1(points, x, s->cells_per_blob, s);
         if (ret != C_KZG_OK) goto out;
 
         /* Reorganize from rows into columns */
@@ -294,18 +294,18 @@ static C_KZG_RET init_fk20_multi_settings(KZGSettings *s) {
         if (ret != C_KZG_OK) goto out;
 
         /* Allocate space for points in affine representation */
-        ret = c_kzg_calloc((void **)&p_affine, FIELD_ELEMENTS_PER_CELL, sizeof(blst_p1_affine));
+        ret = c_kzg_calloc((void **)&p_affine, s->field_elements_per_cell, sizeof(blst_p1_affine));
         if (ret != C_KZG_OK) goto out;
 
         /* Calculate the size of each table, this can be re-used */
         size_t table_size = blst_p1s_mult_wbits_precompute_sizeof(
-            s->wbits, FIELD_ELEMENTS_PER_CELL
+            s->wbits, s->field_elements_per_cell
         );
 
         for (size_t i = 0; i < circulant_domain_size; i++) {
             /* Transform the points to affine representation */
             const blst_p1 *p_arg[2] = {s->x_ext_fft_columns[i], NULL};
-            blst_p1s_to_affine(p_affine, p_arg, FIELD_ELEMENTS_PER_CELL);
+            blst_p1s_to_affine(p_affine, p_arg, s->field_elements_per_cell);
             const blst_p1_affine *points_arg[2] = {p_affine, NULL};
 
             /* Allocate space for the table */
@@ -314,12 +314,12 @@ static C_KZG_RET init_fk20_multi_settings(KZGSettings *s) {
 
             /* Compute table for fixed-base MSM */
             blst_p1s_mult_wbits_precompute(
-                s->tables[i], s->wbits, points_arg, FIELD_ELEMENTS_PER_CELL
+                s->tables[i], s->wbits, points_arg, s->field_elements_per_cell
             );
         }
 
         /* Calculate the size of the scratch */
-        s->scratch_size = blst_p1s_mult_wbits_scratch_sizeof(FIELD_ELEMENTS_PER_CELL);
+        s->scratch_size = blst_p1s_mult_wbits_scratch_sizeof(s->field_elements_per_cell);
     }
 
 out:
@@ -398,11 +398,16 @@ C_KZG_RET load_trusted_setup(
         goto out_error;
     }
 
+    out->field_elements_per_cell = 64;
+    out->bytes_per_cell = out->field_elements_per_cell * BYTES_PER_FIELD_ELEMENT;
+    out->cells_per_blob = FIELD_ELEMENTS_PER_BLOB / out->field_elements_per_cell;
+    out->cells_per_ext_blob = FIELD_ELEMENTS_PER_EXT_BLOB / out->field_elements_per_cell;
+
     /*
-     * This is the window size for the windowed multiplication in proof generation. The larger wbits
-     * is, the faster the MSM will be, but the size of the precomputed table will grow
-     * exponentially. With 8 bits, the tables are 96 MiB; with 9 bits, the tables are 192 MiB and so
-     * forth. From our testing, there are diminishing returns after 8 bits.
+     * This is the window size for the windowed multiplication in proof generation. The larger
+     * wbits is, the faster the MSM will be, but the size of the precomputed table will grow
+     * exponentially. With 8 bits, the tables are 96 MiB; with 9 bits, the tables are 192 MiB
+     * and so forth. From our testing, there are diminishing returns after 8 bits.
      */
     out->wbits = precompute;
 

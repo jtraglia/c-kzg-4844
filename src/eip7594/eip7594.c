@@ -48,8 +48,8 @@ static const char *RANDOM_CHALLENGE_DOMAIN_VERIFY_CELL_KZG_PROOF_BATCH = "RCKZGC
 /**
  * Given a blob, compute all of its cells and proofs.
  *
- * @param[out]  cells   An array of CELLS_PER_EXT_BLOB cells
- * @param[out]  proofs  An array of CELLS_PER_EXT_BLOB proofs
+ * @param[out]  cells   An array of s->cells_per_ext_blob cells
+ * @param[out]  proofs  An array of s->cells_per_ext_blob proofs
  * @param[in]   blob    The blob to get cells/proofs for
  * @param[in]   s       The trusted setup
  *
@@ -109,18 +109,20 @@ C_KZG_RET compute_cells_and_kzg_proofs(
         if (ret != C_KZG_OK) goto out;
 
         /* Convert all of the cells to byte-form */
-        for (size_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
-            for (size_t j = 0; j < FIELD_ELEMENTS_PER_CELL; j++) {
-                size_t index = i * FIELD_ELEMENTS_PER_CELL + j;
+        for (size_t i = 0; i < s->cells_per_ext_blob; i++) {
+            for (size_t j = 0; j < s->field_elements_per_cell; j++) {
+                size_t index = i * s->field_elements_per_cell + j;
                 size_t offset = j * BYTES_PER_FIELD_ELEMENT;
-                bytes_from_bls_field((Bytes32 *)&cells[i].bytes[offset], &data_fr[index]);
+                bytes_from_bls_field(
+                    (Bytes32 *)&mut_cell_at(cells, i, s)->bytes[offset], &data_fr[index]
+                );
             }
         }
     }
 
     if (proofs != NULL) {
         /* Allocate space for our proofs in g1-form */
-        ret = new_g1_array(&proofs_g1, CELLS_PER_EXT_BLOB);
+        ret = new_g1_array(&proofs_g1, s->cells_per_ext_blob);
         if (ret != C_KZG_OK) goto out;
 
         /* Compute the proofs, only uses the first half of the polynomial */
@@ -128,11 +130,11 @@ C_KZG_RET compute_cells_and_kzg_proofs(
         if (ret != C_KZG_OK) goto out;
 
         /* Bit-reverse the proofs */
-        ret = bit_reversal_permutation(proofs_g1, sizeof(g1_t), CELLS_PER_EXT_BLOB);
+        ret = bit_reversal_permutation(proofs_g1, sizeof(g1_t), s->cells_per_ext_blob);
         if (ret != C_KZG_OK) goto out;
 
         /* Convert all of the proofs to byte-form */
-        for (size_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
+        for (size_t i = 0; i < s->cells_per_ext_blob; i++) {
             bytes_from_g1(&proofs[i], &proofs_g1[i]);
         }
     }
@@ -152,14 +154,14 @@ out:
 /**
  * Given some cells for a blob, recover all cells/proofs.
  *
- * @param[out]  recovered_cells     An array of CELLS_PER_EXT_BLOB cells
- * @param[out]  recovered_proofs    An array of CELLS_PER_EXT_BLOB proofs
+ * @param[out]  recovered_cells     An array of s->cells_per_ext_blob cells
+ * @param[out]  recovered_proofs    An array of s->cells_per_ext_blob proofs
  * @param[in]   cell_indices        The cell indices for the available cells, length `num_cells`
  * @param[in]   cells               The available cells we recover from, length `num_cells`
  * @param[in]   num_cells           The number of available cells provided
  * @param[in]   s                   The trusted setup
  *
- * @remark At least CELLS_PER_BLOB cells must be provided.
+ * @remark At least s->cells_per_blob cells must be provided.
  * @remark Recovery is faster if there are fewer missing cells.
  * @remark If recovered_proofs is NULL, they will not be recomputed.
  */
@@ -176,20 +178,20 @@ C_KZG_RET recover_cells_and_kzg_proofs(
     g1_t *recovered_proofs_g1 = NULL;
 
     /* Ensure only one blob's worth of cells was provided */
-    if (num_cells > CELLS_PER_EXT_BLOB) {
+    if (num_cells > s->cells_per_ext_blob) {
         ret = C_KZG_BADARGS;
         goto out;
     }
 
     /* Check if it's possible to recover */
-    if (num_cells < CELLS_PER_BLOB) {
+    if (num_cells < s->cells_per_blob) {
         ret = C_KZG_BADARGS;
         goto out;
     }
 
     /* Check that cell indices are valid */
     for (size_t i = 0; i < num_cells; i++) {
-        if (cell_indices[i] >= CELLS_PER_EXT_BLOB) {
+        if (cell_indices[i] >= s->cells_per_ext_blob) {
             ret = C_KZG_BADARGS;
             goto out;
         }
@@ -198,7 +200,7 @@ C_KZG_RET recover_cells_and_kzg_proofs(
     /* Do allocations */
     ret = new_fr_array(&recovered_cells_fr, FIELD_ELEMENTS_PER_EXT_BLOB);
     if (ret != C_KZG_OK) goto out;
-    ret = new_g1_array(&recovered_proofs_g1, CELLS_PER_EXT_BLOB);
+    ret = new_g1_array(&recovered_proofs_g1, s->cells_per_ext_blob);
     if (ret != C_KZG_OK) goto out;
 
     /* Initialize all cells as missing */
@@ -208,8 +210,8 @@ C_KZG_RET recover_cells_and_kzg_proofs(
 
     /* Populate recovered_cells_fr with available cells at the right places */
     for (size_t i = 0; i < num_cells; i++) {
-        size_t index = cell_indices[i] * FIELD_ELEMENTS_PER_CELL;
-        for (size_t j = 0; j < FIELD_ELEMENTS_PER_CELL; j++) {
+        size_t index = cell_indices[i] * s->field_elements_per_cell;
+        for (size_t j = 0; j < s->field_elements_per_cell; j++) {
             fr_t *ptr = &recovered_cells_fr[index + j];
 
             /*
@@ -224,26 +226,33 @@ C_KZG_RET recover_cells_and_kzg_proofs(
 
             /* Convert the untrusted input bytes to a field element */
             size_t offset = j * BYTES_PER_FIELD_ELEMENT;
-            ret = bytes_to_bls_field(ptr, (const Bytes32 *)&cells[i].bytes[offset]);
+            ret = bytes_to_bls_field(ptr, (const Bytes32 *)&cell_at(cells, i, s)->bytes[offset]);
             if (ret != C_KZG_OK) goto out;
         }
     }
 
-    if (num_cells == CELLS_PER_EXT_BLOB) {
+    if (num_cells == s->cells_per_ext_blob) {
         /* Nothing to recover, copy the cells */
-        memcpy(recovered_cells, cells, CELLS_PER_EXT_BLOB * sizeof(Cell));
+        for (size_t i = 0; i < s->cells_per_ext_blob; i++) {
+            memcpy(
+                mut_cell_at(recovered_cells, i, s)->bytes,
+                cell_at(cells, i, s)->bytes,
+                s->bytes_per_cell
+            );
+        }
     } else {
         /* Perform cell recovery */
         ret = recover_cells(recovered_cells_fr, cell_indices, num_cells, recovered_cells_fr, s);
         if (ret != C_KZG_OK) goto out;
 
         /* Convert the recovered data points to byte-form */
-        for (size_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
-            for (size_t j = 0; j < FIELD_ELEMENTS_PER_CELL; j++) {
-                size_t index = i * FIELD_ELEMENTS_PER_CELL + j;
+        for (size_t i = 0; i < s->cells_per_ext_blob; i++) {
+            for (size_t j = 0; j < s->field_elements_per_cell; j++) {
+                size_t index = i * s->field_elements_per_cell + j;
                 size_t offset = j * BYTES_PER_FIELD_ELEMENT;
                 bytes_from_bls_field(
-                    (Bytes32 *)&recovered_cells[i].bytes[offset], &recovered_cells_fr[index]
+                    (Bytes32 *)(&mut_cell_at(recovered_cells, i, s)->bytes[offset]),
+                    &recovered_cells_fr[index]
                 );
             }
         }
@@ -265,11 +274,11 @@ C_KZG_RET recover_cells_and_kzg_proofs(
         if (ret != C_KZG_OK) goto out;
 
         /* Bit-reverse the proofs */
-        ret = bit_reversal_permutation(recovered_proofs_g1, sizeof(g1_t), CELLS_PER_EXT_BLOB);
+        ret = bit_reversal_permutation(recovered_proofs_g1, sizeof(g1_t), s->cells_per_ext_blob);
         if (ret != C_KZG_OK) goto out;
 
         /* Convert all of the proofs to byte-form */
-        for (size_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
+        for (size_t i = 0; i < s->cells_per_ext_blob; i++) {
             bytes_from_g1(&recovered_proofs[i], &recovered_proofs_g1[i]);
         }
     }
@@ -373,7 +382,8 @@ static C_KZG_RET compute_r_powers_for_verify_cell_kzg_proof_batch(
     const uint64_t *cell_indices,
     const Cell *cells,
     const Bytes48 *proofs_bytes,
-    uint64_t num_cells
+    uint64_t num_cells,
+    const KZGSettings *s
 ) {
     C_KZG_RET ret;
     uint8_t *bytes = NULL;
@@ -382,13 +392,13 @@ static C_KZG_RET compute_r_powers_for_verify_cell_kzg_proof_batch(
 
     /* Calculate the size of the data we're going to hash */
     size_t input_size = DOMAIN_STR_LENGTH                          /* The domain separator */
-                        + sizeof(uint64_t)                         /* FIELD_ELEMENTS_PER_CELL */
+                        + sizeof(uint64_t)                         /* s->field_elements_per_cell */
                         + sizeof(uint64_t)                         /* num_commitments */
                         + sizeof(uint64_t)                         /* num_cells */
                         + (num_commitments * BYTES_PER_COMMITMENT) /* commitment_bytes */
                         + (num_cells * sizeof(uint64_t))           /* commitment_indices */
                         + (num_cells * sizeof(uint64_t))           /* cell_indices */
-                        + (num_cells * BYTES_PER_CELL)             /* cells */
+                        + (num_cells * s->bytes_per_cell)          /* cells */
                         + (num_cells * BYTES_PER_PROOF);           /* proofs_bytes */
 
     /* Allocate space to copy this data into */
@@ -406,7 +416,7 @@ static C_KZG_RET compute_r_powers_for_verify_cell_kzg_proof_batch(
     offset += DOMAIN_STR_LENGTH;
 
     /* Copy field elements per cell */
-    bytes_from_uint64(offset, FIELD_ELEMENTS_PER_CELL);
+    bytes_from_uint64(offset, s->field_elements_per_cell);
     offset += sizeof(uint64_t);
 
     /* Copy number of commitments */
@@ -433,8 +443,8 @@ static C_KZG_RET compute_r_powers_for_verify_cell_kzg_proof_batch(
         offset += sizeof(uint64_t);
 
         /* Copy cell */
-        memcpy(offset, &cells[i], BYTES_PER_CELL);
-        offset += BYTES_PER_CELL;
+        memcpy(offset, &cell_at(cells, i, s)->bytes, s->bytes_per_cell);
+        offset += s->bytes_per_cell;
 
         /* Copy proof */
         memcpy(offset, &proofs_bytes[i], BYTES_PER_PROOF);
@@ -528,7 +538,7 @@ static void get_inv_coset_shift_for_cell(
      * Get the cell index in reverse-bit order.
      * This index points to this cell's coset factor h_k in the roots_of_unity array.
      */
-    uint64_t cell_idx_rbl = reverse_bits_limited(CELLS_PER_EXT_BLOB, cell_index);
+    uint64_t cell_idx_rbl = reverse_bits_limited(s->cells_per_ext_blob, cell_index);
 
     /*
      * Observe that for every element in roots_of_unity, we can find its inverse by
@@ -560,7 +570,7 @@ static void get_coset_shift_pow_for_cell(
      * Get the cell index in reverse-bit order.
      * This index points to this cell's coset factor h_k in the roots_of_unity array.
      */
-    uint64_t cell_idx_rbl = reverse_bits_limited(CELLS_PER_EXT_BLOB, cell_index);
+    uint64_t cell_idx_rbl = reverse_bits_limited(s->cells_per_ext_blob, cell_index);
 
     /*
      * Get the index to h_k^n in the roots_of_unity array.
@@ -568,7 +578,7 @@ static void get_coset_shift_pow_for_cell(
      * Multiplying the index of h_k by n, effectively raises h_k to the n-th power,
      * because advancing in the roots_of_unity array corresponds to increasing exponents.
      */
-    uint64_t h_k_pow_idx = cell_idx_rbl * FIELD_ELEMENTS_PER_CELL;
+    uint64_t h_k_pow_idx = cell_idx_rbl * s->field_elements_per_cell;
 
     /* Get h_k^n using the index */
     assert(h_k_pow_idx < FIELD_ELEMENTS_PER_EXT_BLOB + 1);
@@ -605,13 +615,13 @@ static C_KZG_RET compute_commitment_to_aggregated_interpolation_poly(
     // Array allocations
     ////////////////////////////////////////////////////////////////////////////////////////////////
 
-    ret = new_bool_array(&is_cell_used, CELLS_PER_EXT_BLOB);
+    ret = new_bool_array(&is_cell_used, s->cells_per_ext_blob);
     if (ret != C_KZG_OK) goto out;
     ret = new_fr_array(&aggregated_column_cells, FIELD_ELEMENTS_PER_EXT_BLOB);
     if (ret != C_KZG_OK) goto out;
-    ret = new_fr_array(&column_interpolation_poly, FIELD_ELEMENTS_PER_CELL);
+    ret = new_fr_array(&column_interpolation_poly, s->field_elements_per_cell);
     if (ret != C_KZG_OK) goto out;
-    ret = new_fr_array(&aggregated_interpolation_poly, FIELD_ELEMENTS_PER_CELL);
+    ret = new_fr_array(&aggregated_interpolation_poly, s->field_elements_per_cell);
     if (ret != C_KZG_OK) goto out;
 
     ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -619,9 +629,9 @@ static C_KZG_RET compute_commitment_to_aggregated_interpolation_poly(
     ////////////////////////////////////////////////////////////////////////////////////////////////
 
     /* Start with zeroed out columns */
-    for (size_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
-        for (size_t j = 0; j < FIELD_ELEMENTS_PER_CELL; j++) {
-            size_t index = i * FIELD_ELEMENTS_PER_CELL + j;
+    for (size_t i = 0; i < s->cells_per_ext_blob; i++) {
+        for (size_t j = 0; j < s->field_elements_per_cell; j++) {
+            size_t index = i * s->field_elements_per_cell + j;
             aggregated_column_cells[index] = FR_ZERO;
         }
     }
@@ -637,13 +647,13 @@ static C_KZG_RET compute_commitment_to_aggregated_interpolation_poly(
         uint64_t column_index = cell_indices[cell_index];
 
         /* Iterate over every field element of this cell: scale it and aggregate it */
-        for (size_t fr_index = 0; fr_index < FIELD_ELEMENTS_PER_CELL; fr_index++) {
+        for (size_t fr_index = 0; fr_index < s->field_elements_per_cell; fr_index++) {
             fr_t original_fr, scaled_fr;
 
             /* Get the field element at this offset */
             size_t offset = fr_index * BYTES_PER_FIELD_ELEMENT;
             ret = bytes_to_bls_field(
-                &original_fr, (const Bytes32 *)&cells[cell_index].bytes[offset]
+                &original_fr, (const Bytes32 *)&cell_at(cells, cell_index, s)->bytes[offset]
             );
             if (ret != C_KZG_OK) goto out;
 
@@ -651,7 +661,7 @@ static C_KZG_RET compute_commitment_to_aggregated_interpolation_poly(
             blst_fr_mul(&scaled_fr, &original_fr, &r_powers[cell_index]);
 
             /* Figure out the right index for this field element within the extended array */
-            size_t array_index = column_index * FIELD_ELEMENTS_PER_CELL + fr_index;
+            size_t array_index = column_index * s->field_elements_per_cell + fr_index;
             /* Aggregate the scaled field element into the array */
             blst_fr_add(
                 &aggregated_column_cells[array_index],
@@ -666,7 +676,7 @@ static C_KZG_RET compute_commitment_to_aggregated_interpolation_poly(
     ////////////////////////////////////////////////////////////////////////////////////////////////
 
     /* Start with false values */
-    for (size_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
+    for (size_t i = 0; i < s->cells_per_ext_blob; i++) {
         is_cell_used[i] = false;
     }
 
@@ -680,24 +690,24 @@ static C_KZG_RET compute_commitment_to_aggregated_interpolation_poly(
     ////////////////////////////////////////////////////////////////////////////////////////////////
 
     /* Start with a zeroed out poly */
-    for (size_t i = 0; i < FIELD_ELEMENTS_PER_CELL; i++) {
+    for (size_t i = 0; i < s->field_elements_per_cell; i++) {
         aggregated_interpolation_poly[i] = FR_ZERO;
     }
 
     /* Interpolate each column */
-    for (size_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
+    for (size_t i = 0; i < s->cells_per_ext_blob; i++) {
         /* We can skip columns without any cells */
         if (!is_cell_used[i]) continue;
 
         /* Offset to the first cell for this column */
-        size_t index = i * FIELD_ELEMENTS_PER_CELL;
+        size_t index = i * s->field_elements_per_cell;
 
         /*
          * Reach into the big array and permute the right column.
          * No need to copy the data, we are not gonna use them again.
          */
         ret = bit_reversal_permutation(
-            &aggregated_column_cells[index], sizeof(fr_t), FIELD_ELEMENTS_PER_CELL
+            &aggregated_column_cells[index], sizeof(fr_t), s->field_elements_per_cell
         );
         if (ret != C_KZG_OK) goto out;
 
@@ -707,17 +717,20 @@ static C_KZG_RET compute_commitment_to_aggregated_interpolation_poly(
          * directly over the coset because it's not a subgroup.
          */
         ret = fr_ifft(
-            column_interpolation_poly, &aggregated_column_cells[index], FIELD_ELEMENTS_PER_CELL, s
+            column_interpolation_poly,
+            &aggregated_column_cells[index],
+            s->field_elements_per_cell,
+            s
         );
         if (ret != C_KZG_OK) goto out;
 
         /* Shift the poly by h_k^{-1} where h_k is the coset factor for this cell */
         fr_t inv_coset_factor;
         get_inv_coset_shift_for_cell(&inv_coset_factor, i, s);
-        shift_poly(column_interpolation_poly, FIELD_ELEMENTS_PER_CELL, &inv_coset_factor);
+        shift_poly(column_interpolation_poly, s->field_elements_per_cell, &inv_coset_factor);
 
         /* Update the aggregated poly */
-        for (size_t k = 0; k < FIELD_ELEMENTS_PER_CELL; k++) {
+        for (size_t k = 0; k < s->field_elements_per_cell; k++) {
             blst_fr_add(
                 &aggregated_interpolation_poly[k],
                 &aggregated_interpolation_poly[k],
@@ -734,7 +747,7 @@ static C_KZG_RET compute_commitment_to_aggregated_interpolation_poly(
         commitment_out,
         s->g1_values_monomial,
         aggregated_interpolation_poly,
-        FIELD_ELEMENTS_PER_CELL
+        s->field_elements_per_cell
     );
     if (ret != C_KZG_OK) goto out;
 
@@ -811,7 +824,7 @@ C_KZG_RET verify_cell_kzg_proof_batch(
     g1_t final_g1_sum;
     g1_t proof_lincomb;
     g1_t weighted_sum_of_proofs;
-    g2_t power_of_s = s->g2_values_monomial[FIELD_ELEMENTS_PER_CELL];
+    g2_t power_of_s = s->g2_values_monomial[s->field_elements_per_cell];
     size_t num_commitments;
 
     /* Arrays */
@@ -834,7 +847,7 @@ C_KZG_RET verify_cell_kzg_proof_batch(
 
     for (size_t i = 0; i < num_cells; i++) {
         /* Make sure column index is valid */
-        if (cell_indices[i] >= CELLS_PER_EXT_BLOB) return C_KZG_BADARGS;
+        if (cell_indices[i] >= s->cells_per_ext_blob) return C_KZG_BADARGS;
     }
 
     ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -880,7 +893,8 @@ C_KZG_RET verify_cell_kzg_proof_batch(
         cell_indices,
         cells,
         proofs_bytes,
-        num_cells
+        num_cells,
+        s
     );
     if (ret != C_KZG_OK) goto out;
 
