@@ -33,17 +33,20 @@ type (
 	Cell          []byte
 )
 
-var (
-	loaded     = false
-	settings   = C.KZGSettings{}
-	ErrBadArgs = errors.New("bad arguments")
-	ErrError   = errors.New("unexpected error")
-	ErrMalloc  = errors.New("malloc failed")
+type Context struct {
+	settings C.KZGSettings
+	loaded   bool
 
 	/* These will be initialized when the trusted setup is loaded */
 	BytesPerCell         int
 	CellsPerExtBlob      int
 	FieldElementsPerCell int
+}
+
+var (
+	ErrBadArgs = errors.New("bad arguments")
+	ErrError   = errors.New("unexpected error")
+	ErrMalloc  = errors.New("malloc failed")
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -66,11 +69,11 @@ func makeErrorFromRet(ret C.C_KZG_RET) error {
 }
 
 // cellsToBuf converts a slice of cells to a buffer of cell bytes.
-func cellsToBuf(cells []Cell) []byte {
-	buf := make([]byte, BytesPerCell*len(cells))
+func (ctx *Context) cellsToBuf(cells []Cell) []byte {
+	buf := make([]byte, ctx.BytesPerCell*len(cells))
 	for i, cell := range cells {
-		start := i * BytesPerCell
-		end := start + BytesPerCell
+		start := i * ctx.BytesPerCell
+		end := start + ctx.BytesPerCell
 		copy(buf[start:end], cell)
 	}
 	return buf
@@ -78,12 +81,12 @@ func cellsToBuf(cells []Cell) []byte {
 
 // bufToCells converts a buffer of cell bytes to a slice of cells.
 // It's safe to assume the cells are a valid length and everything.
-func bufToCells(buf []byte) []Cell {
-	count := len(buf) / BytesPerCell
+func (ctx *Context) bufToCells(buf []byte) []Cell {
+	count := len(buf) / ctx.BytesPerCell
 	cells := make([]Cell, count)
 	for i := 0; i < count; i++ {
-		start := i * BytesPerCell
-		end := start + BytesPerCell
+		start := i * ctx.BytesPerCell
+		end := start + ctx.BytesPerCell
 		cells[i] = buf[start:end]
 	}
 	return cells
@@ -148,18 +151,9 @@ func (c *Cell) UnmarshalText(input []byte) error {
 	if bytes.HasPrefix(input, []byte("0x")) {
 		input = input[2:]
 	}
-	if len(input) != 2*BytesPerCell {
-		return ErrBadArgs
-	}
-	*c = make(Cell, BytesPerCell)
-	l, err := hex.Decode(*c, input)
-	if err != nil {
-		return err
-	}
-	if l != BytesPerCell {
-		return ErrBadArgs
-	}
-	return nil
+	*c = make(Cell, len(input)/2)
+	_, err := hex.Decode(*c, input)
+	return err
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -179,12 +173,10 @@ LoadTrustedSetup is the binding for:
 	    uint64_t num_g2_monomial_bytes,
 	    uint64_t precompute);
 */
-func LoadTrustedSetup(g1MonomialBytes, g1LagrangeBytes, g2MonomialBytes []byte, precompute uint) error {
-	if loaded {
-		panic("trusted setup is already loaded")
-	}
+func LoadTrustedSetup(g1MonomialBytes, g1LagrangeBytes, g2MonomialBytes []byte, precompute uint) (*Context, error) {
+	ctx := Context{}
 	ret := C.load_trusted_setup(
-		&settings,
+		&ctx.settings,
 		*(**C.uint8_t)(unsafe.Pointer(&g1MonomialBytes)),
 		(C.uint64_t)(len(g1MonomialBytes)),
 		*(**C.uint8_t)(unsafe.Pointer(&g1LagrangeBytes)),
@@ -193,10 +185,12 @@ func LoadTrustedSetup(g1MonomialBytes, g1LagrangeBytes, g2MonomialBytes []byte, 
 		(C.uint64_t)(len(g2MonomialBytes)),
 		(C.uint64_t)(precompute))
 	if ret == C.C_KZG_OK {
-		loaded = true
-		return nil
+		ctx.BytesPerCell = int(ctx.settings.bytes_per_cell)
+		ctx.CellsPerExtBlob = int(ctx.settings.cells_per_ext_blob)
+		ctx.FieldElementsPerCell = int(ctx.settings.field_elements_per_cell)
+		return &ctx, nil
 	}
-	return makeErrorFromRet(ret)
+	return nil, makeErrorFromRet(ret)
 }
 
 /*
@@ -207,28 +201,26 @@ LoadTrustedSetupFile is the binding for:
 	    FILE *in,
 	    uint64_t precompute);
 */
-func LoadTrustedSetupFile(trustedSetupFile string, precompute uint) error {
-	if loaded {
-		panic("trusted setup is already loaded")
-	}
+func LoadTrustedSetupFile(trustedSetupFile string, precompute uint) (*Context, error) {
+	ctx := Context{}
 	cTrustedSetupFile := C.CString(trustedSetupFile)
 	defer C.free(unsafe.Pointer(cTrustedSetupFile))
 	cMode := C.CString("r")
 	defer C.free(unsafe.Pointer(cMode))
 	fp := C.fopen(cTrustedSetupFile, cMode)
 	if fp == nil {
-		panic("error reading trusted setup")
+		return nil, errors.New("failed to read trusted setup")
 	}
-	ret := C.load_trusted_setup_file(&settings, fp, (C.uint64_t)(precompute))
+	ret := C.load_trusted_setup_file(&ctx.settings, fp, (C.uint64_t)(precompute))
 	C.fclose(fp)
 	if ret == C.C_KZG_OK {
-		loaded = true
-		BytesPerCell = int(settings.bytes_per_cell)
-		CellsPerExtBlob = int(settings.cells_per_ext_blob)
-		FieldElementsPerCell = int(settings.field_elements_per_cell)
-		return nil
+		ctx.loaded = true
+		ctx.BytesPerCell = int(ctx.settings.bytes_per_cell)
+		ctx.CellsPerExtBlob = int(ctx.settings.cells_per_ext_blob)
+		ctx.FieldElementsPerCell = int(ctx.settings.field_elements_per_cell)
+		return &ctx, nil
 	}
-	return makeErrorFromRet(ret)
+	return nil, makeErrorFromRet(ret)
 }
 
 /*
@@ -237,12 +229,12 @@ FreeTrustedSetup is the binding for:
 	void free_trusted_setup(
 	    KZGSettings *s);
 */
-func FreeTrustedSetup() {
-	if !loaded {
+func (ctx *Context) FreeTrustedSetup() {
+	if !ctx.loaded {
 		panic("trusted setup isn't loaded")
 	}
-	C.free_trusted_setup(&settings)
-	loaded = false
+	C.free_trusted_setup(&ctx.settings)
+	ctx.loaded = false
 }
 
 /*
@@ -253,8 +245,8 @@ BlobToKZGCommitment is the binding for:
 	    const Blob *blob,
 	    const KZGSettings *s);
 */
-func BlobToKZGCommitment(blob *Blob) (KZGCommitment, error) {
-	if !loaded {
+func (ctx *Context) BlobToKZGCommitment(blob *Blob) (KZGCommitment, error) {
+	if !ctx.loaded {
 		panic("trusted setup isn't loaded")
 	}
 	if blob == nil {
@@ -265,7 +257,7 @@ func BlobToKZGCommitment(blob *Blob) (KZGCommitment, error) {
 	ret := C.blob_to_kzg_commitment(
 		(*C.KZGCommitment)(unsafe.Pointer(&commitment)),
 		(*C.Blob)(unsafe.Pointer(blob)),
-		&settings)
+		&ctx.settings)
 
 	if ret != C.C_KZG_OK {
 		return KZGCommitment{}, makeErrorFromRet(ret)
@@ -283,8 +275,8 @@ ComputeKZGProof is the binding for:
 	    const Bytes32 *z_bytes,
 	    const KZGSettings *s);
 */
-func ComputeKZGProof(blob *Blob, zBytes Bytes32) (KZGProof, Bytes32, error) {
-	if !loaded {
+func (ctx *Context) ComputeKZGProof(blob *Blob, zBytes Bytes32) (KZGProof, Bytes32, error) {
+	if !ctx.loaded {
 		panic("trusted setup isn't loaded")
 	}
 	if blob == nil {
@@ -297,7 +289,7 @@ func ComputeKZGProof(blob *Blob, zBytes Bytes32) (KZGProof, Bytes32, error) {
 		(*C.Bytes32)(unsafe.Pointer(&y)),
 		(*C.Blob)(unsafe.Pointer(blob)),
 		(*C.Bytes32)(unsafe.Pointer(&zBytes)),
-		&settings)
+		&ctx.settings)
 	if ret != C.C_KZG_OK {
 		return KZGProof{}, Bytes32{}, makeErrorFromRet(ret)
 	}
@@ -313,8 +305,8 @@ ComputeBlobKZGProof is the binding for:
 	    const Bytes48 *commitment_bytes,
 	    const KZGSettings *s);
 */
-func ComputeBlobKZGProof(blob *Blob, commitmentBytes Bytes48) (KZGProof, error) {
-	if !loaded {
+func (ctx *Context) ComputeBlobKZGProof(blob *Blob, commitmentBytes Bytes48) (KZGProof, error) {
+	if !ctx.loaded {
 		panic("trusted setup isn't loaded")
 	}
 	if blob == nil {
@@ -326,7 +318,7 @@ func ComputeBlobKZGProof(blob *Blob, commitmentBytes Bytes48) (KZGProof, error) 
 		(*C.KZGProof)(unsafe.Pointer(&proof)),
 		(*C.Blob)(unsafe.Pointer(blob)),
 		(*C.Bytes48)(unsafe.Pointer(&commitmentBytes)),
-		&settings)
+		&ctx.settings)
 	if ret != C.C_KZG_OK {
 		return KZGProof{}, makeErrorFromRet(ret)
 	}
@@ -344,8 +336,8 @@ VerifyKZGProof is the binding for:
 	    const Bytes48 *proof_bytes,
 	    const KZGSettings *s);
 */
-func VerifyKZGProof(commitmentBytes Bytes48, zBytes, yBytes Bytes32, proofBytes Bytes48) (bool, error) {
-	if !loaded {
+func (ctx *Context) VerifyKZGProof(commitmentBytes Bytes48, zBytes, yBytes Bytes32, proofBytes Bytes48) (bool, error) {
+	if !ctx.loaded {
 		panic("trusted setup isn't loaded")
 	}
 	var result C.bool
@@ -355,7 +347,7 @@ func VerifyKZGProof(commitmentBytes Bytes48, zBytes, yBytes Bytes32, proofBytes 
 		(*C.Bytes32)(unsafe.Pointer(&zBytes)),
 		(*C.Bytes32)(unsafe.Pointer(&yBytes)),
 		(*C.Bytes48)(unsafe.Pointer(&proofBytes)),
-		&settings)
+		&ctx.settings)
 	if ret != C.C_KZG_OK {
 		return false, makeErrorFromRet(ret)
 	}
@@ -372,8 +364,8 @@ VerifyBlobKZGProof is the binding for:
 	    const Bytes48 *proof_bytes,
 	    const KZGSettings *s);
 */
-func VerifyBlobKZGProof(blob *Blob, commitmentBytes, proofBytes Bytes48) (bool, error) {
-	if !loaded {
+func (ctx *Context) VerifyBlobKZGProof(blob *Blob, commitmentBytes, proofBytes Bytes48) (bool, error) {
+	if !ctx.loaded {
 		panic("trusted setup isn't loaded")
 	}
 	if blob == nil {
@@ -386,7 +378,7 @@ func VerifyBlobKZGProof(blob *Blob, commitmentBytes, proofBytes Bytes48) (bool, 
 		(*C.Blob)(unsafe.Pointer(blob)),
 		(*C.Bytes48)(unsafe.Pointer(&commitmentBytes)),
 		(*C.Bytes48)(unsafe.Pointer(&proofBytes)),
-		&settings)
+		&ctx.settings)
 	if ret != C.C_KZG_OK {
 		return false, makeErrorFromRet(ret)
 	}
@@ -403,8 +395,8 @@ VerifyBlobKZGProofBatch is the binding for:
 	    const Bytes48 *proofs_bytes,
 	    const KZGSettings *s);
 */
-func VerifyBlobKZGProofBatch(blobs []Blob, commitmentsBytes, proofsBytes []Bytes48) (bool, error) {
-	if !loaded {
+func (ctx *Context) VerifyBlobKZGProofBatch(blobs []Blob, commitmentsBytes, proofsBytes []Bytes48) (bool, error) {
+	if !ctx.loaded {
 		panic("trusted setup isn't loaded")
 	}
 	if len(blobs) != len(commitmentsBytes) || len(blobs) != len(proofsBytes) {
@@ -418,7 +410,7 @@ func VerifyBlobKZGProofBatch(blobs []Blob, commitmentsBytes, proofsBytes []Bytes
 		*(**C.Bytes48)(unsafe.Pointer(&commitmentsBytes)),
 		*(**C.Bytes48)(unsafe.Pointer(&proofsBytes)),
 		(C.uint64_t)(len(blobs)),
-		&settings)
+		&ctx.settings)
 	if ret != C.C_KZG_OK {
 		return false, makeErrorFromRet(ret)
 	}
@@ -434,21 +426,21 @@ ComputeCells is the binding for:
 	    const Blob *blob,
 	    const KZGSettings *s);
 */
-func ComputeCells(blob *Blob) ([]Cell, error) {
-	if !loaded {
+func (ctx *Context) ComputeCells(blob *Blob) ([]Cell, error) {
+	if !ctx.loaded {
 		panic("trusted setup isn't loaded")
 	}
 
-	cellsBuf := make([]byte, CellsPerExtBlob*BytesPerCell)
+	cellsBuf := make([]byte, ctx.CellsPerExtBlob*ctx.BytesPerCell)
 	ret := C.compute_cells_and_kzg_proofs(
 		*(**C.Cell)(unsafe.Pointer(&cellsBuf)),
 		(*C.KZGProof)(nil),
 		(*C.Blob)(unsafe.Pointer(blob)),
-		&settings)
+		&ctx.settings)
 	if ret != C.C_KZG_OK {
 		return nil, makeErrorFromRet(ret)
 	}
-	return bufToCells(cellsBuf), nil
+	return ctx.bufToCells(cellsBuf), nil
 }
 
 /*
@@ -460,22 +452,22 @@ ComputeCellsAndKZGProofs is the binding for:
 	    const Blob *blob,
 	    const KZGSettings *s);
 */
-func ComputeCellsAndKZGProofs(blob *Blob) ([]Cell, []KZGProof, error) {
-	if !loaded {
+func (ctx *Context) ComputeCellsAndKZGProofs(blob *Blob) ([]Cell, []KZGProof, error) {
+	if !ctx.loaded {
 		panic("trusted setup isn't loaded")
 	}
 
-	cellsBuf := make([]byte, CellsPerExtBlob*BytesPerCell)
-	proofs := make([]KZGProof, CellsPerExtBlob)
+	cellsBuf := make([]byte, ctx.CellsPerExtBlob*ctx.BytesPerCell)
+	proofs := make([]KZGProof, ctx.CellsPerExtBlob)
 	ret := C.compute_cells_and_kzg_proofs(
 		*(**C.Cell)(unsafe.Pointer(&cellsBuf)),
 		*(**C.KZGProof)(unsafe.Pointer(&proofs)),
 		(*C.Blob)(unsafe.Pointer(blob)),
-		&settings)
+		&ctx.settings)
 	if ret != C.C_KZG_OK {
 		return nil, nil, makeErrorFromRet(ret)
 	}
-	return bufToCells(cellsBuf), proofs, nil
+	return ctx.bufToCells(cellsBuf), proofs, nil
 }
 
 /*
@@ -489,33 +481,33 @@ RecoverCellsAndKZGProofs is the binding for:
 	    uint64_t num_cells,
 	    const KZGSettings *s);
 */
-func RecoverCellsAndKZGProofs(cellIndices []uint64, cells []Cell) ([]Cell, []KZGProof, error) {
-	if !loaded {
+func (ctx *Context) RecoverCellsAndKZGProofs(cellIndices []uint64, cells []Cell) ([]Cell, []KZGProof, error) {
+	if !ctx.loaded {
 		panic("trusted setup isn't loaded")
 	}
 	if len(cellIndices) != len(cells) {
 		return nil, nil, ErrBadArgs
 	}
 	for _, cell := range cells {
-		if len(cell) != BytesPerCell {
+		if len(cell) != ctx.BytesPerCell {
 			return nil, nil, ErrBadArgs
 		}
 	}
 
-	cellsBuf := cellsToBuf(cells)
-	recoveredCellsBuf := make([]byte, CellsPerExtBlob*BytesPerCell)
-	recoveredProofs := make([]KZGProof, CellsPerExtBlob)
+	cellsBuf := ctx.cellsToBuf(cells)
+	recoveredCellsBuf := make([]byte, ctx.CellsPerExtBlob*ctx.BytesPerCell)
+	recoveredProofs := make([]KZGProof, ctx.CellsPerExtBlob)
 	ret := C.recover_cells_and_kzg_proofs(
 		*(**C.Cell)(unsafe.Pointer(&recoveredCellsBuf)),
 		*(**C.KZGProof)(unsafe.Pointer(&recoveredProofs)),
 		*(**C.uint64_t)(unsafe.Pointer(&cellIndices)),
 		*(**C.Cell)(unsafe.Pointer(&cellsBuf)),
 		(C.uint64_t)(len(cells)),
-		&settings)
+		&ctx.settings)
 	if ret != C.C_KZG_OK {
 		return nil, nil, makeErrorFromRet(ret)
 	}
-	return bufToCells(recoveredCellsBuf), recoveredProofs, nil
+	return ctx.bufToCells(recoveredCellsBuf), recoveredProofs, nil
 }
 
 /*
@@ -530,21 +522,21 @@ VerifyCellKZGProofBatch is the binding for:
 	    uint64_t num_cells,
 	    const KZGSettings *s);
 */
-func VerifyCellKZGProofBatch(commitmentsBytes []Bytes48, cellIndices []uint64, cells []Cell, proofsBytes []Bytes48) (bool, error) {
-	if !loaded {
+func (ctx *Context) VerifyCellKZGProofBatch(commitmentsBytes []Bytes48, cellIndices []uint64, cells []Cell, proofsBytes []Bytes48) (bool, error) {
+	if !ctx.loaded {
 		panic("trusted setup isn't loaded")
 	}
 	if len(commitmentsBytes) != len(cells) || len(cellIndices) != len(cells) || len(proofsBytes) != len(cells) {
 		return false, ErrBadArgs
 	}
 	for _, cell := range cells {
-		if len(cell) != BytesPerCell {
+		if len(cell) != ctx.BytesPerCell {
 			return false, ErrBadArgs
 		}
 	}
 
 	var result C.bool
-	cellsBuf := cellsToBuf(cells)
+	cellsBuf := ctx.cellsToBuf(cells)
 	ret := C.verify_cell_kzg_proof_batch(
 		&result,
 		*(**C.Bytes48)(unsafe.Pointer(&commitmentsBytes)),
@@ -552,7 +544,7 @@ func VerifyCellKZGProofBatch(commitmentsBytes []Bytes48, cellIndices []uint64, c
 		*(**C.Cell)(unsafe.Pointer(&cellsBuf)),
 		*(**C.Bytes48)(unsafe.Pointer(&proofsBytes)),
 		(C.uint64_t)(len(cells)),
-		&settings)
+		&ctx.settings)
 	if ret != C.C_KZG_OK {
 		return false, makeErrorFromRet(ret)
 	}
