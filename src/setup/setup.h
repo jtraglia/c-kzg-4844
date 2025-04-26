@@ -36,10 +36,13 @@ C_KZG_RET load_trusted_setup(
     uint64_t num_g1_lagrange_bytes,
     const uint8_t *g2_monomial_bytes,
     uint64_t num_g2_monomial_bytes,
-    uint64_t precompute
+    uint64_t precompute,
+    uint64_t field_elements_per_cell
 );
 
-C_KZG_RET load_trusted_setup_file(KZGSettings *out, FILE *in, uint64_t precompute);
+C_KZG_RET load_trusted_setup_file(
+    KZGSettings *out, FILE *in, uint64_t precompute, uint64_t field_elements_per_cell
+);
 
 void free_trusted_setup(KZGSettings *s);
 

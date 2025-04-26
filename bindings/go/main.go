@@ -173,7 +173,7 @@ LoadTrustedSetup is the binding for:
 	    uint64_t num_g2_monomial_bytes,
 	    uint64_t precompute);
 */
-func LoadTrustedSetup(g1MonomialBytes, g1LagrangeBytes, g2MonomialBytes []byte, precompute uint) (*Context, error) {
+func LoadTrustedSetup(g1MonomialBytes, g1LagrangeBytes, g2MonomialBytes []byte, precompute uint, field_elements_per_cell uint) (*Context, error) {
 	ctx := Context{}
 	ret := C.load_trusted_setup(
 		&ctx.settings,
@@ -183,7 +183,8 @@ func LoadTrustedSetup(g1MonomialBytes, g1LagrangeBytes, g2MonomialBytes []byte, 
 		(C.uint64_t)(len(g1LagrangeBytes)),
 		*(**C.uint8_t)(unsafe.Pointer(&g2MonomialBytes)),
 		(C.uint64_t)(len(g2MonomialBytes)),
-		(C.uint64_t)(precompute))
+		(C.uint64_t)(precompute),
+		(C.uint64_t)(field_elements_per_cell))
 	if ret == C.C_KZG_OK {
 		ctx.BytesPerCell = int(ctx.settings.bytes_per_cell)
 		ctx.CellsPerExtBlob = int(ctx.settings.cells_per_ext_blob)
@@ -199,9 +200,10 @@ LoadTrustedSetupFile is the binding for:
 	C_KZG_RET load_trusted_setup_file(
 	    KZGSettings *out,
 	    FILE *in,
-	    uint64_t precompute);
+	    uint64_t precompute,
+		uint64_t field_elements_per_cell);
 */
-func LoadTrustedSetupFile(trustedSetupFile string, precompute uint) (*Context, error) {
+func LoadTrustedSetupFile(trustedSetupFile string, precompute uint, field_elements_per_cell uint) (*Context, error) {
 	ctx := Context{}
 	cTrustedSetupFile := C.CString(trustedSetupFile)
 	defer C.free(unsafe.Pointer(cTrustedSetupFile))
@@ -211,7 +213,7 @@ func LoadTrustedSetupFile(trustedSetupFile string, precompute uint) (*Context, e
 	if fp == nil {
 		return nil, errors.New("failed to read trusted setup")
 	}
-	ret := C.load_trusted_setup_file(&ctx.settings, fp, (C.uint64_t)(precompute))
+	ret := C.load_trusted_setup_file(&ctx.settings, fp, (C.uint64_t)(precompute), (C.uint64_t)(field_elements_per_cell))
 	C.fclose(fp)
 	if ret == C.C_KZG_OK {
 		ctx.loaded = true

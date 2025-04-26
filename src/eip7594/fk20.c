@@ -28,23 +28,19 @@
  * @param[out]  out     The reordered polynomial, length `s->cells_per_ext_blob`
  * @param[in]   in      The input polynomial, length `FIELD_ELEMENTS_PER_BLOB`
  * @param[in]   offset  The offset
+ * @param[in]   stride  The stride
  */
-static void toeplitz_coeffs_stride(fr_t *out, const fr_t *in, size_t offset, const KZGSettings *s) {
-    /* Calculate starting indices */
-    size_t out_start = s->cells_per_blob + 2;
-    size_t in_start = s->cells_per_ext_blob - offset - 1;
+static void toeplitz_coeffs_stride(fr_t *out, const fr_t *in, uint64_t offset, uint64_t stride) {
+    uint64_t n = FIELD_ELEMENTS_PER_BLOB;
+    uint64_t k = n / stride;
+    uint64_t k2 = k * 2;
 
-    /* Set the first element */
-    out[0] = in[FIELD_ELEMENTS_PER_BLOB - 1 - offset];
-
-    /* Initialize these elements to zero */
-    for (size_t i = 1; i < out_start; i++) {
+    out[0] = in[n - 1 - offset];
+    for (uint64_t i = 1; i <= k + 1 && i < k2; i++) {
         out[i] = FR_ZERO;
     }
-
-    /* Copy elements with a fixed stride */
-    for (size_t i = 0; i < s->cells_per_ext_blob - out_start; i++) {
-        out[out_start + i] = in[in_start + i * s->field_elements_per_cell];
+    for (uint64_t i = k + 2, j = 2 * stride - offset - 1; i < k2; i++, j += stride) {
+        out[i] = in[j];
     }
 }
 
@@ -100,7 +96,7 @@ C_KZG_RET compute_fk20_cell_proofs(g1_t *out, const fr_t *p, const KZGSettings *
     ret = c_kzg_calloc((void **)&coeffs, circulant_domain_size, sizeof(void *));
     if (ret != C_KZG_OK) goto out;
     for (size_t i = 0; i < circulant_domain_size; i++) {
-        ret = new_fr_array(&coeffs[i], s->cells_per_blob);
+        ret = new_fr_array(&coeffs[i], s->field_elements_per_cell);
         if (ret != C_KZG_OK) goto out;
     }
 
@@ -111,7 +107,7 @@ C_KZG_RET compute_fk20_cell_proofs(g1_t *out, const fr_t *p, const KZGSettings *
 
     /* Compute toeplitz coefficients and organize by column */
     for (size_t i = 0; i < s->field_elements_per_cell; i++) {
-        toeplitz_coeffs_stride(toeplitz_coeffs, p, i, s);
+        toeplitz_coeffs_stride(toeplitz_coeffs, p, i, s->field_elements_per_cell);
         ret = fr_fft(toeplitz_coeffs_fft, toeplitz_coeffs, circulant_domain_size, s);
         if (ret != C_KZG_OK) goto out;
         for (size_t j = 0; j < circulant_domain_size; j++) {

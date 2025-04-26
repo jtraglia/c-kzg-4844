@@ -187,6 +187,7 @@ void free_trusted_setup(KZGSettings *s) {
     c_kzg_free(s->tables);
     s->wbits = 0;
     s->scratch_size = 0;
+    /* update this */
 }
 
 /**
@@ -379,7 +380,8 @@ C_KZG_RET load_trusted_setup(
     uint64_t num_g1_lagrange_bytes,
     const uint8_t *g2_monomial_bytes,
     uint64_t num_g2_monomial_bytes,
-    uint64_t precompute
+    uint64_t precompute,
+    uint64_t field_elements_per_cell
 ) {
     C_KZG_RET ret;
 
@@ -398,11 +400,6 @@ C_KZG_RET load_trusted_setup(
         goto out_error;
     }
 
-    out->field_elements_per_cell = 64;
-    out->bytes_per_cell = out->field_elements_per_cell * BYTES_PER_FIELD_ELEMENT;
-    out->cells_per_blob = FIELD_ELEMENTS_PER_BLOB / out->field_elements_per_cell;
-    out->cells_per_ext_blob = FIELD_ELEMENTS_PER_EXT_BLOB / out->field_elements_per_cell;
-
     /*
      * This is the window size for the windowed multiplication in proof generation. The larger
      * wbits is, the faster the MSM will be, but the size of the precomputed table will grow
@@ -410,6 +407,19 @@ C_KZG_RET load_trusted_setup(
      * and so forth. From our testing, there are diminishing returns after 8 bits.
      */
     out->wbits = precompute;
+
+    /*
+     * This can be a power of two between 1 and 64, inclusive.
+     */
+    if (!is_power_of_two(field_elements_per_cell) || field_elements_per_cell == 0 ||
+        field_elements_per_cell > 64) {
+        ret = C_KZG_BADARGS;
+        goto out_error;
+    }
+    out->field_elements_per_cell = field_elements_per_cell;
+    out->bytes_per_cell = out->field_elements_per_cell * BYTES_PER_FIELD_ELEMENT;
+    out->cells_per_blob = FIELD_ELEMENTS_PER_BLOB / out->field_elements_per_cell;
+    out->cells_per_ext_blob = FIELD_ELEMENTS_PER_EXT_BLOB / out->field_elements_per_cell;
 
     /* Sanity check in case this is called directly */
     if (num_g1_monomial_bytes != NUM_G1_POINTS * BYTES_PER_G1 ||
@@ -506,7 +516,9 @@ out_success:
  * @remark The file format is `n1 n2 g1_1 g1_2 ... g1_n1 g2_1 ... g2_n2` where the first two numbers
  * are in decimal and the remainder are hexstrings and any whitespace can be used as separators.
  */
-C_KZG_RET load_trusted_setup_file(KZGSettings *out, FILE *in, uint64_t precompute) {
+C_KZG_RET load_trusted_setup_file(
+    KZGSettings *out, FILE *in, uint64_t precompute, uint64_t field_elements_per_cell
+) {
     C_KZG_RET ret;
     int num_matches;
     uint64_t num_g1_points;
@@ -573,7 +585,8 @@ C_KZG_RET load_trusted_setup_file(KZGSettings *out, FILE *in, uint64_t precomput
         NUM_G1_POINTS * BYTES_PER_G1,
         g2_monomial_bytes,
         NUM_G2_POINTS * BYTES_PER_G2,
-        precompute
+        precompute,
+        field_elements_per_cell
     );
 
 out:

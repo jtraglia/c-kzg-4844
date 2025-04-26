@@ -15,9 +15,11 @@ import (
 
 var ctx *Context
 
+const FieldElementsPerCell uint = 64
+
 func TestMain(m *testing.M) {
 	var err error
-	ctx, err = LoadTrustedSetupFile("../../src/trusted_setup.txt", 8)
+	ctx, err = LoadTrustedSetupFile("../../src/trusted_setup.txt", 8, FieldElementsPerCell)
 	if err != nil {
 		panic(fmt.Sprintf("failed to load trusted setup: %v", err))
 	}
@@ -717,7 +719,7 @@ func Benchmark(b *testing.B) {
 		b.Run(fmt.Sprintf("LoadTrustedSetupFile(precompute=%d)", i), func(b *testing.B) {
 			for n := 0; n < b.N; n++ {
 				b.StartTimer()
-				tmp_ctx, err := LoadTrustedSetupFile("../../src/trusted_setup.txt", uint(i))
+				tmp_ctx, err := LoadTrustedSetupFile("../../src/trusted_setup.txt", uint(i), FieldElementsPerCell)
 				b.StopTimer()
 				require.NoError(b, err)
 				tmp_ctx.FreeTrustedSetup()
@@ -777,7 +779,7 @@ func Benchmark(b *testing.B) {
 	})
 
 	for i := 0; i <= 8; i++ {
-		tmp_ctx, err := LoadTrustedSetupFile("../../src/trusted_setup.txt", uint(i))
+		tmp_ctx, err := LoadTrustedSetupFile("../../src/trusted_setup.txt", uint(i), FieldElementsPerCell)
 		if err != nil {
 			panic(fmt.Sprintf("failed to load trusted setup: %v", err))
 		}
