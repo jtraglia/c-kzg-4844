@@ -28,4 +28,5 @@
 #include "eip7594/fk20.c"
 #include "eip7594/poly.c"
 #include "eip7594/recovery.c"
+#include "setup/settings.c"
 #include "setup/setup.c"

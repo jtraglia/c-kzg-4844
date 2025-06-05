@@ -27,22 +27,6 @@
 #include <string.h>   /* For memcpy */
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
-// Macros
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-/** The number of bytes in a g1 point. */
-#define BYTES_PER_G1 48
-
-/** The number of bytes in a g2 point. */
-#define BYTES_PER_G2 96
-
-/** The number of g1 points in a trusted setup. */
-#define NUM_G1_POINTS FIELD_ELEMENTS_PER_BLOB
-
-/** The number of g2 points in a trusted setup. */
-#define NUM_G2_POINTS 65
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
 // Constants
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -160,33 +144,7 @@ out:
  * @remark This does nothing if `s` is NULL.
  */
 void free_trusted_setup(KZGSettings *s) {
-    if (s == NULL) return;
-    c_kzg_free(s->brp_roots_of_unity);
-    c_kzg_free(s->roots_of_unity);
-    c_kzg_free(s->reverse_roots_of_unity);
-    c_kzg_free(s->g1_values_monomial);
-    c_kzg_free(s->g1_values_lagrange_brp);
-    c_kzg_free(s->g2_values_monomial);
-
-    /*
-     * If for whatever reason we accidentally call free_trusted_setup() on an uninitialized
-     * structure, we don't want to deference these 2d arrays. Without these NULL checks, it's
-     * possible for there to be a segmentation fault via null pointer dereference.
-     */
-    if (s->x_ext_fft_columns != NULL) {
-        for (size_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
-            c_kzg_free(s->x_ext_fft_columns[i]);
-        }
-    }
-    if (s->tables != NULL) {
-        for (size_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
-            c_kzg_free(s->tables[i]);
-        }
-    }
-    c_kzg_free(s->x_ext_fft_columns);
-    c_kzg_free(s->tables);
-    s->wbits = 0;
-    s->scratch_size = 0;
+    free_settings(s);
 }
 
 /**
@@ -298,9 +256,7 @@ static C_KZG_RET init_fk20_multi_settings(KZGSettings *s) {
         if (ret != C_KZG_OK) goto out;
 
         /* Calculate the size of each table, this can be re-used */
-        size_t table_size = blst_p1s_mult_wbits_precompute_sizeof(
-            s->wbits, FIELD_ELEMENTS_PER_CELL
-        );
+        s->table_size = blst_p1s_mult_wbits_precompute_sizeof(s->wbits, FIELD_ELEMENTS_PER_CELL);
 
         for (size_t i = 0; i < circulant_domain_size; i++) {
             /* Transform the points to affine representation */
@@ -309,7 +265,7 @@ static C_KZG_RET init_fk20_multi_settings(KZGSettings *s) {
             const blst_p1_affine *points_arg[2] = {p_affine, NULL};
 
             /* Allocate space for the table */
-            ret = c_kzg_malloc((void **)&s->tables[i], table_size);
+            ret = c_kzg_malloc((void **)&s->tables[i], s->table_size);
             if (ret != C_KZG_OK) goto out;
 
             /* Compute table for fixed-base MSM */
@@ -355,24 +311,6 @@ static C_KZG_RET is_trusted_setup_in_lagrange_form(const KZGSettings *s, size_t 
         &s->g2_values_monomial[1]
     );
     return is_monomial_form ? C_KZG_BADARGS : C_KZG_OK;
-}
-
-/**
- * Initialize all fields in KZGSettings to null/zero.
- *
- * @param[out]  out The KZGSettings to initialize.
- */
-static void init_settings(KZGSettings *out) {
-    out->roots_of_unity = NULL;
-    out->brp_roots_of_unity = NULL;
-    out->reverse_roots_of_unity = NULL;
-    out->g1_values_monomial = NULL;
-    out->g1_values_lagrange_brp = NULL;
-    out->g2_values_monomial = NULL;
-    out->x_ext_fft_columns = NULL;
-    out->tables = NULL;
-    out->wbits = 0;
-    out->scratch_size = 0;
 }
 
 /**
