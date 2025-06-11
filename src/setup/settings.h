@@ -76,4 +76,24 @@ typedef struct {
     size_t wbits;
     /** The scratch size for the fixed-base MSM. */
     size_t scratch_size;
+    /** The size (in bytes) of each table in tables. */
+    size_t table_size;
 } KZGSettings;
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+// Public Functions
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void init_settings(KZGSettings *out);
+void free_settings(KZGSettings *s);
+
+C_KZG_RET serialize_settings(uint8_t **out_bytes, size_t *out_len, const KZGSettings *s);
+C_KZG_RET deserialize_settings(KZGSettings *out, const uint8_t *data, size_t data_len);
+
+#ifdef __cplusplus
+}
+#endif
