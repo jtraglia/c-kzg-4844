@@ -76,4 +76,12 @@ typedef struct {
     size_t wbits;
     /** The scratch size for the fixed-base MSM. */
     size_t scratch_size;
+    /** A lock for the commitment cache. */
+    long *comm_cache_lock;
+    /** The bytes used as the commitment cache key. */
+    uint8_t *comm_cache_key;
+    /** The bytes used as the commitment cache value. */
+    uint8_t *comm_cache_value;
+    /** The max number of commitments the cache supports. */
+    uint64_t comm_cache_size;
 } KZGSettings;
