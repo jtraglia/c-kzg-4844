@@ -20,6 +20,7 @@
 #import <Metal/Metal.h>
 
 #include "metal/metal_api.h"
+#include "metal/kzg_shader_source.h"
 #include "common/alloc.h"
 
 #include <stdlib.h>
@@ -143,42 +144,19 @@ C_KZG_RET metal_init(MetalContext **ctx) {
             context->library = [context->device newLibraryWithURL:libraryURL error:&error];
         }
 
-        /* If that fails, try to compile from source */
+        /* If that fails, compile from embedded source */
         if (context->library == nil) {
-            /* Get the path to the metal source file */
-            /* In production, the metallib should be pre-compiled */
-            NSString *sourcePath = nil;
-
-            /* Try several possible locations */
-            NSArray *searchPaths = @[
-                @"src/metal/kzg_kernels.metal",
-                @"../src/metal/kzg_kernels.metal",
-                @"kzg_kernels.metal"
-            ];
-
-            NSFileManager *fm = [NSFileManager defaultManager];
-            for (NSString *path in searchPaths) {
-                if ([fm fileExistsAtPath:path]) {
-                    sourcePath = path;
-                    break;
-                }
-            }
-
-            if (sourcePath != nil) {
-                NSString *source = [NSString stringWithContentsOfFile:sourcePath
-                                                             encoding:NSUTF8StringEncoding
-                                                                error:&error];
-                if (source != nil) {
-                    MTLCompileOptions *options = [[MTLCompileOptions alloc] init];
+            NSString *source = [NSString stringWithUTF8String:METAL_SHADER_SOURCE];
+            if (source != nil) {
+                MTLCompileOptions *options = [[MTLCompileOptions alloc] init];
 #if defined(__MAC_OS_X_VERSION_MAX_ALLOWED) && __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
-                    options.mathMode = MTLMathModeFast;
+                options.mathMode = MTLMathModeFast;
 #else
-                    options.fastMathEnabled = YES;
+                options.fastMathEnabled = YES;
 #endif
-                    context->library = [context->device newLibraryWithSource:source
-                                                                     options:options
-                                                                       error:&error];
-                }
+                context->library = [context->device newLibraryWithSource:source
+                                                                 options:options
+                                                                   error:&error];
             }
         }
 
