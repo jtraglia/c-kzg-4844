@@ -21,6 +21,27 @@ endif
 
 # The base compiler flags. More can be added on command line.
 CFLAGS += -I. -I../inc -O2 -Werror -Wno-gnu-folding-constant
+
+###############################################################################
+# Experimental Metal Support (Apple Silicon GPU Acceleration)
+###############################################################################
+
+# Enable Metal support with: make METAL=1
+ifdef METAL
+ifeq ($(PLATFORM),Darwin)
+	METAL_SUPPORT = 1
+endif
+endif
+
+ifdef METAL_SUPPORT
+	CFLAGS += -DEXPERIMENTAL_METAL_SUPPORT
+	# Metal framework and Foundation for Objective-C runtime
+	METAL_FRAMEWORKS = -framework Metal -framework Foundation
+	# Objective-C source files
+	METAL_SOURCES = metal/metal_runtime.m
+	# Metal shader files (compiled separately)
+	METAL_SHADERS = metal/kzg_kernels.metal
+endif
 # Enable a bunch of optional warnings.
 CFLAGS += \
 	-pedantic \
@@ -95,6 +116,11 @@ BLST_BUILDSCRIPT_FLAGS = -D__BLST_PORTABLE__
 # Libraries to build with.
 LIBS = $(BLST_LIBRARY)
 
+# Add Metal frameworks if enabled
+ifdef METAL_SUPPORT
+	LIBS += $(METAL_FRAMEWORKS)
+endif
+
 # Create file lists.
 SOURCE_FILES := $(shell find . -name '*.c' | sed 's|^\./||' | sort)
 HEADER_FILES := $(shell find . -name '*.h' | sed 's|^\./||' | sort)
@@ -109,6 +135,30 @@ HEADER_FILES := $(filter-out test/tinytest.h, $(HEADER_FILES))
 ###############################################################################
 
 all: test
+
+###############################################################################
+# Metal Shader Compilation (Optional)
+###############################################################################
+
+# Metal shaders can be:
+# 1. Pre-compiled using Xcode's metal compiler (faster startup)
+# 2. Compiled at runtime from source (no Xcode dependency)
+#
+# To compile shaders ahead of time, run: make metal_shaders
+# This requires Xcode (not just Command Line Tools)
+
+ifdef METAL_SUPPORT
+.PHONY: metal_shaders
+metal_shaders:
+	@if $(XCRUN) --find metal >/dev/null 2>&1; then \
+		echo "[+] compiling Metal shaders"; \
+		$(XCRUN) -sdk macosx metal -c metal/kzg_kernels.metal -o metal/kzg_kernels.air && \
+		$(XCRUN) -sdk macosx metallib metal/kzg_kernels.air -o metal/kzg_kernels.metallib && \
+		rm -f metal/kzg_kernels.air; \
+	else \
+		echo "[+] Metal compiler not available - shaders will compile at runtime"; \
+	fi
+endif
 
 # This will populate the blst directory will files.
 $(BLST_BUILDSCRIPT):
@@ -135,12 +185,22 @@ blst:
 			$(MAKE) build_blst; \
 	fi
 
+# Build command - includes Metal sources if METAL_SUPPORT is defined
+ifdef METAL_SUPPORT
+TESTS_BUILD_CMD = @$(CC) $(CFLAGS) -o $@ test/tests.c $(METAL_SOURCES) $(LIBS)
+TESTS_BUILD_MSG = @echo "[+] building with Metal support enabled"
+else
+TESTS_BUILD_CMD = @$(CC) $(CFLAGS) -o $@ test/tests.c $(LIBS)
+TESTS_BUILD_MSG = @true
+endif
+
 # This compiles the tests with optimizations disabled.
 # It will re-build if any of our source/header files change.
 tests: CFLAGS += -O0
 tests: blst $(SOURCE_FILES) $(HEADER_FILES)
 	@echo "[+] building tests"
-	@$(CC) $(CFLAGS) -o $@ test/tests.c $(LIBS)
+	$(TESTS_BUILD_MSG)
+	$(TESTS_BUILD_CMD)
 
 # This simply runs the test suite.
 .PHONY: test
@@ -259,4 +319,5 @@ clean:
 	@echo "[+] cleaning"
 	@rm -f *.o */*.o *.profraw *.profdata *.html xray-log.* *.prof *.pdf \
 	    tests tests_cov tests_prof .blst_hash
+	@rm -f metal/*.air metal/*.metallib
 	@rm -rf analysis-report

@@ -20,7 +20,44 @@
 #include "eip7594/cell.h"
 #include "eip7594/poly.h"
 
+#ifdef EXPERIMENTAL_METAL_SUPPORT
+#include "metal/metal_api.h"
+#endif
+
 #include <string.h> /* For memcpy */
+
+#ifdef EXPERIMENTAL_METAL_SUPPORT
+////////////////////////////////////////////////////////////////////////////////////////////////////
+// Metal Context Management
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/** Global Metal context (lazily initialized). */
+static MetalContext *g_metal_ctx = NULL;
+
+/** Flag indicating if Metal initialization has been attempted. */
+static bool g_metal_init_attempted = false;
+
+/**
+ * Get the global Metal context, initializing it if necessary.
+ *
+ * @return The Metal context, or NULL if Metal is not available.
+ */
+static MetalContext *get_metal_context(void) {
+    if (!g_metal_init_attempted) {
+        g_metal_init_attempted = true;
+        if (metal_is_available()) {
+            metal_init(&g_metal_ctx);
+        }
+    }
+    return g_metal_ctx;
+}
+
+/**
+ * Minimum FFT size to use GPU acceleration.
+ * Below this size, CPU is likely faster due to GPU overhead.
+ */
+#define MIN_METAL_FFT_SIZE 1024
+#endif /* EXPERIMENTAL_METAL_SUPPORT */
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // Constants
@@ -107,6 +144,21 @@ C_KZG_RET fr_fft(fr_t *out, const fr_t *in, size_t n, const KZGSettings *s) {
     }
 
     size_t roots_stride = FIELD_ELEMENTS_PER_EXT_BLOB / n;
+
+#ifdef EXPERIMENTAL_METAL_SUPPORT
+    /* Try to use Metal acceleration for large FFTs */
+    if (n >= MIN_METAL_FFT_SIZE) {
+        MetalContext *ctx = get_metal_context();
+        if (ctx != NULL) {
+            C_KZG_RET ret = metal_fr_fft(ctx, out, in, n, s->roots_of_unity, roots_stride, false);
+            if (ret == C_KZG_OK) {
+                return C_KZG_OK;
+            }
+            /* Fall through to CPU implementation on failure */
+        }
+    }
+#endif
+
     fr_fft_fast(out, in, 1, s->roots_of_unity, roots_stride, n);
 
     return C_KZG_OK;
@@ -134,6 +186,21 @@ C_KZG_RET fr_ifft(fr_t *out, const fr_t *in, size_t n, const KZGSettings *s) {
     }
 
     size_t stride = FIELD_ELEMENTS_PER_EXT_BLOB / n;
+
+#ifdef EXPERIMENTAL_METAL_SUPPORT
+    /* Try to use Metal acceleration for large FFTs */
+    if (n >= MIN_METAL_FFT_SIZE) {
+        MetalContext *ctx = get_metal_context();
+        if (ctx != NULL) {
+            C_KZG_RET ret = metal_fr_fft(ctx, out, in, n, s->reverse_roots_of_unity, stride, true);
+            if (ret == C_KZG_OK) {
+                return C_KZG_OK;
+            }
+            /* Fall through to CPU implementation on failure */
+        }
+    }
+#endif
+
     fr_fft_fast(out, in, 1, s->reverse_roots_of_unity, stride, n);
 
     fr_t inv_n;
