@@ -170,13 +170,30 @@ static void g1_fft_fast(
         g1_fft_fast(out, in, stride * 2, roots, roots_stride * 2, half);
         g1_fft_fast(out + half, in + stride, stride * 2, roots, roots_stride * 2, half);
         for (size_t i = 0; i < half; i++) {
-            /* If the scalar is one, we can skip the multiplication */
-            if (fr_is_one(&roots[i * roots_stride])) {
+            /* If the point is infinity, the butterfly is trivial: just copy */
+            if (blst_p1_is_inf(&out[i + half])) {
+                out[i + half] = out[i];
+                continue;
+            }
+
+            /* Compute y_times_root = root * out[i + half] */
+            if (memcmp(&roots[i * roots_stride], &FR_ONE, sizeof(fr_t)) == 0) {
+                /* If the scalar is one, we can skip the multiplication */
                 y_times_root = out[i + half];
             } else {
                 g1_mul(&y_times_root, &out[i + half], &roots[i * roots_stride]);
             }
-            g1_sub(&out[i + half], &out[i], &y_times_root);
+
+            /*
+             * Butterfly: out[i+half] = out[i] - y_times_root
+             *            out[i]      = out[i] + y_times_root
+             *
+             * Inline g1_sub to avoid cross-TU function call overhead and an
+             * unnecessary copy of y_times_root.
+             */
+            blst_p1_cneg(&y_times_root, true);
+            blst_p1_add_or_double(&out[i + half], &out[i], &y_times_root);
+            blst_p1_cneg(&y_times_root, true);
             blst_p1_add_or_double(&out[i], &out[i], &y_times_root);
         }
     } else {
@@ -235,12 +252,45 @@ C_KZG_RET g1_ifft(g1_t *out, const g1_t *in, size_t n, const KZGSettings *s) {
     size_t stride = FIELD_ELEMENTS_PER_EXT_BLOB / n;
     g1_fft_fast(out, in, 1, s->reverse_roots_of_unity, stride, n);
 
+    /* Precompute 1/n as a scalar once, then use blst_p1_mult directly */
     fr_t inv_n;
+    blst_scalar inv_n_scalar;
     fr_from_uint64(&inv_n, n);
     blst_fr_eucl_inverse(&inv_n, &inv_n);
+    blst_scalar_from_fr(&inv_n_scalar, &inv_n);
     for (size_t i = 0; i < n; i++) {
-        g1_mul(&out[i], &out[i], &inv_n);
+        blst_p1_mult(&out[i], &out[i], inv_n_scalar.b, BITS_PER_FIELD_ELEMENT);
     }
+
+    return C_KZG_OK;
+}
+
+/**
+ * The entry point for inverse FFT over G1 points, without the 1/n scaling.
+ *
+ * This is useful when the 1/n factor can be absorbed into cheaper operations
+ * (e.g., field element multiplications) by the caller.
+ *
+ * @param[out]  out The results (unscaled), length `n`
+ * @param[in]   in  The input data, length `n`
+ * @param[in]   n   Length of the arrays
+ * @param[in]   s   The trusted setup
+ *
+ * @remark Will do nothing if given a zero length array.
+ * @remark The array lengths must be a power of two.
+ * @remark The output is n times the true IFFT; caller must account for the missing 1/n factor.
+ */
+C_KZG_RET g1_ifft_noscale(g1_t *out, const g1_t *in, size_t n, const KZGSettings *s) {
+    /* Handle zero length input */
+    if (n == 0) return C_KZG_OK;
+
+    /* Ensure the length is valid */
+    if (n > FIELD_ELEMENTS_PER_EXT_BLOB || !is_power_of_two(n)) {
+        return C_KZG_BADARGS;
+    }
+
+    size_t stride = FIELD_ELEMENTS_PER_EXT_BLOB / n;
+    g1_fft_fast(out, in, 1, s->reverse_roots_of_unity, stride, n);
 
     return C_KZG_OK;
 }

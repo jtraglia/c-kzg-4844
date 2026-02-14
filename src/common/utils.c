@@ -63,13 +63,13 @@ uint64_t log2_pow2(uint64_t n) {
  * @return An integer with the bits of `n` reversed.
  */
 uint64_t reverse_bits(uint64_t n) {
-    uint64_t result = 0;
-    for (size_t i = 0; i < 64; ++i) {
-        result <<= 1;
-        result |= (n & 1);
-        n >>= 1;
-    }
-    return result;
+    n = ((n >> 1) & 0x5555555555555555ULL) | ((n & 0x5555555555555555ULL) << 1);
+    n = ((n >> 2) & 0x3333333333333333ULL) | ((n & 0x3333333333333333ULL) << 2);
+    n = ((n >> 4) & 0x0F0F0F0F0F0F0F0FULL) | ((n & 0x0F0F0F0F0F0F0F0FULL) << 4);
+    n = ((n >> 8) & 0x00FF00FF00FF00FFULL) | ((n & 0x00FF00FF00FF00FFULL) << 8);
+    n = ((n >> 16) & 0x0000FFFF0000FFFFULL) | ((n & 0x0000FFFF0000FFFFULL) << 16);
+    n = (n >> 32) | (n << 32);
+    return n;
 }
 
 /**
@@ -121,16 +121,26 @@ C_KZG_RET bit_reversal_permutation(void *values, size_t size, size_t n) {
     ret = c_kzg_malloc((void **)&tmp, size);
     if (ret != C_KZG_OK) goto out;
 
-    /* Reorder elements */
-    uint64_t unused_bit_len = 64 - log2_pow2(n);
-    assert(unused_bit_len <= 63);
-    for (size_t i = 0; i < n; i++) {
-        uint64_t r = reverse_bits(i) >> unused_bit_len;
-        if (r > i) {
-            /* Swap the two elements */
-            memcpy(tmp, v + (i * size), size);
-            memcpy(v + (i * size), v + (r * size), size);
-            memcpy(v + (r * size), tmp, size);
+    /*
+     * Incremental bit-reversal: j tracks the bit-reversal of i. When i increments, j is updated by
+     * flipping the highest set bit and propagating the carry downward in bit-reversed order. This
+     * avoids calling reverse_bits() per element (amortized O(1) per iteration).
+     */
+    {
+        size_t j = 0;
+        for (size_t i = 1; i < n; i++) {
+            size_t bit = n >> 1;
+            while (j & bit) {
+                j ^= bit;
+                bit >>= 1;
+            }
+            j ^= bit;
+            if (j > i) {
+                /* Swap the two elements */
+                memcpy(tmp, v + (i * size), size);
+                memcpy(v + (i * size), v + (j * size), size);
+                memcpy(v + (j * size), tmp, size);
+            }
         }
     }
 

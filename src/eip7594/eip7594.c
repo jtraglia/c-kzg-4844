@@ -65,6 +65,7 @@ C_KZG_RET compute_cells_and_kzg_proofs(
     fr_t *poly_lagrange = NULL;
     fr_t *data_fr = NULL;
     g1_t *proofs_g1 = NULL;
+    blst_p1_affine *proofs_affine = NULL;
 
     /* If both of these are null, something is wrong */
     if (cells == NULL && proofs == NULL) {
@@ -86,8 +87,13 @@ C_KZG_RET compute_cells_and_kzg_proofs(
     ret = blob_to_polynomial(poly_lagrange, blob);
     if (ret != C_KZG_OK) goto out;
 
-    /* We need the polynomial to be in monomial form */
-    ret = poly_lagrange_to_monomial(poly_monomial, poly_lagrange, FIELD_ELEMENTS_PER_BLOB, s);
+    /*
+     * Convert lagrange form to monomial form. We BRP poly_lagrange in-place (it's not needed
+     * afterwards) to avoid an extra allocation and copy inside poly_lagrange_to_monomial.
+     */
+    ret = bit_reversal_permutation(poly_lagrange, sizeof(fr_t), FIELD_ELEMENTS_PER_BLOB);
+    if (ret != C_KZG_OK) goto out;
+    ret = fr_ifft(poly_monomial, poly_lagrange, FIELD_ELEMENTS_PER_BLOB, s);
     if (ret != C_KZG_OK) goto out;
 
     /* Ensure that only the first FIELD_ELEMENTS_PER_BLOB elements can be non-zero */
@@ -119,8 +125,8 @@ C_KZG_RET compute_cells_and_kzg_proofs(
     }
 
     if (proofs != NULL) {
-        /* Allocate space for our proofs in g1-form */
-        ret = new_g1_array(&proofs_g1, CELLS_PER_EXT_BLOB);
+        /* Allocate space for our proofs in g1-form (fully written by compute_fk20_cell_proofs) */
+        ret = c_kzg_malloc((void **)&proofs_g1, CELLS_PER_EXT_BLOB * sizeof(g1_t));
         if (ret != C_KZG_OK) goto out;
 
         /* Compute the proofs, only uses the first half of the polynomial */
@@ -131,9 +137,19 @@ C_KZG_RET compute_cells_and_kzg_proofs(
         ret = bit_reversal_permutation(proofs_g1, sizeof(g1_t), CELLS_PER_EXT_BLOB);
         if (ret != C_KZG_OK) goto out;
 
-        /* Convert all of the proofs to byte-form */
+        /* Batch convert proofs to affine (uses Montgomery's trick: 1 inversion instead of 128) */
+        ret = c_kzg_malloc(
+            (void **)&proofs_affine, CELLS_PER_EXT_BLOB * sizeof(blst_p1_affine)
+        );
+        if (ret != C_KZG_OK) goto out;
+        {
+            const blst_p1 *p_arg[2] = {proofs_g1, NULL};
+            blst_p1s_to_affine(proofs_affine, p_arg, CELLS_PER_EXT_BLOB);
+        }
+
+        /* Compress all of the proofs to byte-form */
         for (size_t i = 0; i < CELLS_PER_EXT_BLOB; i++) {
-            bytes_from_g1(&proofs[i], &proofs_g1[i]);
+            blst_p1_affine_compress(proofs[i].bytes, &proofs_affine[i]);
         }
     }
 
@@ -142,6 +158,7 @@ out:
     c_kzg_free(poly_lagrange);
     c_kzg_free(data_fr);
     c_kzg_free(proofs_g1);
+    c_kzg_free(proofs_affine);
     return ret;
 }
 

@@ -140,7 +140,7 @@ C_KZG_RET compute_fk20_cell_proofs(g1_t *out, const fr_t *poly, const KZGSetting
     size_t circulant_domain_size;
 
     blst_scalar *scalars = NULL;
-    fr_t **coeffs = NULL;
+    fr_t *coeffs = NULL;
     fr_t *circulant_coeffs = NULL;     /* The vectors c_i */
     fr_t *circulant_coeffs_fft = NULL; /* The vectors w_i */
     g1_t *v = NULL;
@@ -154,46 +154,56 @@ C_KZG_RET compute_fk20_cell_proofs(g1_t *out, const fr_t *poly, const KZGSetting
      */
     circulant_domain_size = CELLS_PER_BLOB * 2;
 
-    /* Do allocations */
-    ret = new_fr_array(&circulant_coeffs, circulant_domain_size);
+    /* Do allocations - use malloc where data is fully written before being read */
+    ret = c_kzg_malloc((void **)&circulant_coeffs, circulant_domain_size * sizeof(fr_t));
     if (ret != C_KZG_OK) goto out;
-    ret = new_fr_array(&circulant_coeffs_fft, circulant_domain_size);
+    ret = c_kzg_malloc((void **)&circulant_coeffs_fft, circulant_domain_size * sizeof(fr_t));
     if (ret != C_KZG_OK) goto out;
-    ret = new_g1_array(&u, circulant_domain_size);
+    ret = c_kzg_malloc((void **)&u, circulant_domain_size * sizeof(g1_t));
     if (ret != C_KZG_OK) goto out;
-    ret = new_g1_array(&v, circulant_domain_size);
+    ret = c_kzg_malloc((void **)&v, circulant_domain_size * sizeof(g1_t));
     if (ret != C_KZG_OK) goto out;
 
     if (precompute) {
         /* Allocations for fixed-base MSM */
         ret = c_kzg_malloc((void **)&scratch, s->scratch_size);
         if (ret != C_KZG_OK) goto out;
-        ret = c_kzg_calloc((void **)&scalars, FIELD_ELEMENTS_PER_CELL, sizeof(blst_scalar));
+        ret = c_kzg_malloc((void **)&scalars, FIELD_ELEMENTS_PER_CELL * sizeof(blst_scalar));
         if (ret != C_KZG_OK) goto out;
     }
 
-    /* Allocate 2d array for coefficients by column */
-    ret = c_kzg_calloc((void **)&coeffs, circulant_domain_size, sizeof(void *));
+    /* Allocate flat 2d array for coefficients: [circulant_domain_size][FIELD_ELEMENTS_PER_CELL] */
+    ret = c_kzg_malloc(
+        (void **)&coeffs, circulant_domain_size * FIELD_ELEMENTS_PER_CELL * sizeof(fr_t)
+    );
     if (ret != C_KZG_OK) goto out;
-    for (size_t i = 0; i < circulant_domain_size; i++) {
-        ret = new_fr_array(&coeffs[i], FIELD_ELEMENTS_PER_CELL);
-        if (ret != C_KZG_OK) goto out;
-    }
 
-    /* Initialize values to zero */
-    for (size_t i = 0; i < circulant_domain_size; i++) {
-        u[i] = G1_IDENTITY;
-    }
-
-    /* Phase 1, step 4: Compute the w_i columns */
-    for (size_t i = 0; i < FIELD_ELEMENTS_PER_CELL; i++) {
-        /* Select the coefficients c_i of poly that form the i-th circulant matrix */
-        circulant_coeffs_stride(circulant_coeffs, poly, i);
-        /* Apply FFT to get w_i */
-        ret = fr_fft(circulant_coeffs_fft, circulant_coeffs, circulant_domain_size, s);
-        if (ret != C_KZG_OK) goto out;
-        for (size_t j = 0; j < circulant_domain_size; j++) {
-            coeffs[j][i] = circulant_coeffs_fft[j];
+    /*
+     * Phase 1, step 4: Compute the w_i columns and prescale by 1/circulant_domain_size.
+     *
+     * The prescaling absorbs the 1/n factor from the IFFT (step 6) into cheap field
+     * multiplications, avoiding expensive EC scalar multiplications that would otherwise be needed
+     * in the IFFT scaling step. We merge the prescaling into the transpose loop to avoid a second
+     * pass over the entire coefficients array.
+     */
+    {
+        fr_t inv_domain_size;
+        fr_from_uint64(&inv_domain_size, circulant_domain_size);
+        blst_fr_eucl_inverse(&inv_domain_size, &inv_domain_size);
+        for (size_t i = 0; i < FIELD_ELEMENTS_PER_CELL; i++) {
+            /* Select the coefficients c_i of poly that form the i-th circulant matrix */
+            circulant_coeffs_stride(circulant_coeffs, poly, i);
+            /* Apply FFT to get w_i */
+            ret = fr_fft(circulant_coeffs_fft, circulant_coeffs, circulant_domain_size, s);
+            if (ret != C_KZG_OK) goto out;
+            /* Transpose and prescale in one pass */
+            for (size_t j = 0; j < circulant_domain_size; j++) {
+                blst_fr_mul(
+                    &coeffs[j * FIELD_ELEMENTS_PER_CELL + i],
+                    &circulant_coeffs_fft[j],
+                    &inv_domain_size
+                );
+            }
         }
     }
 
@@ -209,10 +219,11 @@ C_KZG_RET compute_fk20_cell_proofs(g1_t *out, const fr_t *poly, const KZGSetting
      *      then each component of the u vector is just an MSM of size l.
      */
     for (size_t i = 0; i < circulant_domain_size; i++) {
+        fr_t *row = &coeffs[i * FIELD_ELEMENTS_PER_CELL];
         if (precompute) {
             /* Transform the field elements to 255-bit scalars */
             for (size_t j = 0; j < FIELD_ELEMENTS_PER_CELL; j++) {
-                blst_scalar_from_fr(&scalars[j], &coeffs[i][j]);
+                blst_scalar_from_fr(&scalars[j], &row[j]);
             }
             const byte *scalars_arg[2] = {(byte *)scalars, NULL};
 
@@ -228,21 +239,20 @@ C_KZG_RET compute_fk20_cell_proofs(g1_t *out, const fr_t *poly, const KZGSetting
             );
         } else {
             /* A pretty fast MSM without precomputation */
-            ret = g1_lincomb_fast(
-                &u[i], s->x_ext_fft_columns[i], coeffs[i], FIELD_ELEMENTS_PER_CELL
-            );
+            ret = g1_lincomb_fast(&u[i], s->x_ext_fft_columns[i], row, FIELD_ELEMENTS_PER_CELL);
             if (ret != C_KZG_OK) goto out;
         }
     }
 
     /*
-     * Phase 1, step 6: Apply the inverse FFT to the u vector.
+     * Phase 1, step 6: Apply the inverse FFT to the u vector (without 1/n scaling, since we
+     * already prescaled the coefficients by 1/n in the field).
      *
      * The result is almost the final v vector: the second half of the vector should be set to the
      * identity elements (commitments to zero coefficients). The v polynomial actually has degree
      * r-1, which is guaranteed by setting the last r+1 elements of c_i vectors to be identities.
      */
-    ret = g1_ifft(v, u, circulant_domain_size, s);
+    ret = g1_ifft_noscale(v, u, circulant_domain_size, s);
     if (ret != C_KZG_OK) goto out;
 
     /*
@@ -259,12 +269,7 @@ C_KZG_RET compute_fk20_cell_proofs(g1_t *out, const fr_t *poly, const KZGSetting
 
 out:
     c_kzg_free(scalars);
-    if (coeffs != NULL) {
-        for (size_t i = 0; i < circulant_domain_size; i++) {
-            c_kzg_free(coeffs[i]);
-        }
-        c_kzg_free(coeffs);
-    }
+    c_kzg_free(coeffs);
     c_kzg_free(circulant_coeffs);
     c_kzg_free(circulant_coeffs_fft);
     c_kzg_free(v);
