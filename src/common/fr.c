@@ -51,18 +51,6 @@ bool fr_is_one(const fr_t *p) {
 }
 
 /**
- * Test whether the operand is null (all 0xff's).
- *
- * @param[in]   p   The field element to be checked
- *
- * @retval  true    The element is null
- * @retval  false   The element is not null
- */
-bool fr_is_null(const fr_t *p) {
-    return fr_equal(p, &FR_NULL);
-}
-
-/**
  * Divide a field element by another.
  *
  * @param[out]  out The result, `a / b`
